@@ -17,6 +17,9 @@ import {
     Heart,
 } from "lucide-react";
 
+import RiskScore from "../../components/RiskScore/RiskScore";
+import VerificationBadge from "../../components/VerificationBadge/VerificationBadge";
+
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../services/supabase/client";
 
@@ -27,6 +30,9 @@ function PropertyDetails() {
 
     const [property, setProperty] = useState(null);
     const [agent, setAgent] = useState(null);
+
+    const [verification, setVerification] = useState(null);
+    const [verificationLoading, setVerificationLoading] = useState(true);
 
     const [loading, setLoading] = useState(true);
     const [errorMessage, setErrorMessage] = useState("");
@@ -94,6 +100,31 @@ function PropertyDetails() {
                         setAgent(agentData);
                     }
                 }
+                const { data: verificationData, error: verificationError } =
+                    await supabase
+                        .from("property_verifications")
+                        .select(`
+      id,
+      status,
+      document_count,
+      review_notes,
+      reviewed_at,
+      created_at
+    `)
+                        .eq("property_id", Number(id))
+                        .order("created_at", { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                if (verificationError) {
+                    console.error(
+                        "Error loading property verification:",
+                        verificationError
+                    );
+                }
+
+                setVerification(verificationData ?? null);
+                setVerificationLoading(false);
             } catch (error) {
                 console.error(
                     "Error fetching property:",
@@ -284,7 +315,7 @@ function PropertyDetails() {
         );
     }
 
-    const verification =
+    const verifications =
         getVerificationDetails(
             property.verification_status
         );
@@ -415,118 +446,209 @@ function PropertyDetails() {
                         </section>
 
                         {/* Verification */}
-                        <section className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-8">
-                            <div className="flex items-start gap-4">
-                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#E8F5EC]">
-                                    <ShieldCheck
-                                        size={24}
-                                        className="text-[#15803D]"
-                                    />
-                                </div>
-
-                                <div>
-                                    <h2 className="text-xl font-bold text-[#24171C]">
-                                        RentSure Verification
-                                    </h2>
-
-                                    <p className="mt-2 text-sm leading-6 text-[#756970]">
-                                        This listing has a RentSure verification
-                                        status based on the information and
-                                        supporting evidence submitted for review.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 rounded-xl bg-[#F8EDEF] p-5">
-                                <p className="text-sm font-semibold text-[#4A1025]">
-                                    Verification status:{" "}
-                                    {verification.label}
+                        
+                        <section className="space-y-6">
+                            <div>
+                                <p className="text-sm font-semibold uppercase tracking-wide text-[#7A1F3D]">
+                                    Trust & Verification
                                 </p>
 
-                                <p className="mt-2 text-sm leading-6 text-[#756970]">
-                                    Verification helps renters assess available
-                                    evidence and identify potential concerns.
-                                    It is not a legal guarantee of ownership,
-                                    availability, or complete freedom from fraud.
+                                <h2 className="mt-2 text-2xl font-bold text-[#24171C]">
+                                    RentSure verification
+                                </h2>
+
+                                <p className="mt-2 max-w-3xl text-sm leading-6 text-[#756970]">
+                                    RentSure reviews submitted property information and supporting
+                                    documents to help renters make more informed decisions.
                                 </p>
                             </div>
-                        </section>
 
-                        {/* Risk */}
-                        <section className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-8">
-                            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-                                <div>
-                                    <h2 className="text-xl font-bold text-[#24171C]">
-                                        RentSure Risk Indicator
-                                    </h2>
+                            <div className="rounded-2xl border border-[#E8DDE1] bg-white p-5 shadow-sm sm:p-6">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                                            Verification Status
+                                        </p>
 
-                                    <p className="mt-2 text-sm leading-6 text-[#756970]">
-                                        A summary indicator designed to help
-                                        renters understand the current risk
-                                        assessment associated with this listing.
-                                    </p>
+                                        <div className="mt-2">
+                                            <VerificationBadge
+                                                status={
+                                                    verification?.status ||
+                                                    property.verification_status ||
+                                                    "pending"
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {verification?.reviewed_at && (
+                                        <div className="text-left sm:text-right">
+                                            <p className="text-xs text-[#756970]">
+                                                Last reviewed
+                                            </p>
+
+                                            <p className="mt-1 text-sm font-semibold text-[#24171C]">
+                                                {new Date(
+                                                    verification.reviewed_at
+                                                ).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
-                                <div className="shrink-0 text-left sm:text-right">
-                                    <p className="text-3xl font-bold text-[#24171C]">
-                                        {property.risk_score ?? "—"}
-                                    </p>
+                                <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                                    <div className="rounded-xl bg-[#FAF8F9] p-4">
+                                        <p className="text-xs text-[#756970]">
+                                            Verification documents
+                                        </p>
 
-                                    <p
-                                        className={`mt-1 text-sm font-semibold ${risk.textClass}`}
-                                    >
-                                        {risk.label}
-                                    </p>
+                                        <p className="mt-1 text-xl font-bold text-[#24171C]">
+                                            {verification?.document_count ?? 0}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-xl bg-[#FAF8F9] p-4">
+                                        <p className="text-xs text-[#756970]">
+                                            Review status
+                                        </p>
+
+                                        <p className="mt-1 text-sm font-bold text-[#24171C]">
+                                            {verification?.status === "verified"
+                                                ? "Completed"
+                                                : verification?.status === "rejected"
+                                                    ? "Rejected"
+                                                    : verification?.status === "needs_information"
+                                                        ? "Needs information"
+                                                        : "In progress"}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-xl bg-[#FAF8F9] p-4">
+                                        <p className="text-xs text-[#756970]">
+                                            RentSure score
+                                        </p>
+
+                                        <p className="mt-1 text-sm font-bold text-[#24171C]">
+                                            {property.risk_score !== null &&
+                                                property.risk_score !== undefined
+                                                ? `${property.risk_score}/100`
+                                                : "Not scored"}
+                                        </p>
+                                    </div>
                                 </div>
+
+                                {verification?.review_notes && (
+                                    <div className="mt-5 rounded-xl border border-[#E8DDE1] bg-[#FAF8F9] p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                                            Review information
+                                        </p>
+
+                                        <p className="mt-2 text-sm leading-6 text-[#24171C]">
+                                            {verification.review_notes}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
-                            {property.risk_score !== null &&
-                                property.risk_score !== undefined && (
-                                    <div className="mt-6">
-                                        <div className="h-3 overflow-hidden rounded-full bg-[#E8DDE1]">
-                                            <div
-                                                className={`h-full rounded-full ${risk.barClass}`}
-                                                style={{
-                                                    width: `${Math.min(
-                                                        Math.max(
-                                                            Number(
-                                                                property.risk_score
-                                                            ) || 0,
-                                                            0
-                                                        ),
-                                                        100
-                                                    )}%`,
-                                                }}
+                            <RiskScore
+                                score={property.risk_score ?? null}
+                                status={
+                                    verification?.status ||
+                                    property.verification_status ||
+                                    "pending"
+                                }
+                            />
+
+                            <div className="rounded-2xl border border-[#E8DDE1] bg-white p-5 shadow-sm sm:p-6">
+                                <h3 className="text-lg font-bold text-[#24171C]">
+                                    Verification factors
+                                </h3>
+
+                                <div className="mt-5 space-y-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#ECFDF3]">
+                                            <span className="h-2 w-2 rounded-full bg-[#15803D]" />
+                                        </div>
+
+                                        <div>
+                                            <p className="text-sm font-semibold text-[#24171C]">
+                                                Property submitted to RentSure
+                                            </p>
+
+                                            <p className="mt-1 text-xs leading-5 text-[#756970]">
+                                                The property has been submitted through the RentSure
+                                                listing workflow.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-start gap-3">
+                                        <div
+                                            className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${(verification?.document_count ?? 0) > 0
+                                                    ? "bg-[#ECFDF3]"
+                                                    : "bg-[#FFF7ED]"
+                                                }`}
+                                        >
+                                            <span
+                                                className={`h-2 w-2 rounded-full ${(verification?.document_count ?? 0) > 0
+                                                        ? "bg-[#15803D]"
+                                                        : "bg-[#B45309]"
+                                                    }`}
                                             />
                                         </div>
 
-                                        <div className="mt-2 flex justify-between text-xs text-[#756970]">
-                                            <span>
-                                                Lower confidence
-                                            </span>
+                                        <div>
+                                            <p className="text-sm font-semibold text-[#24171C]">
+                                                Supporting documents
+                                            </p>
 
-                                            <span>
-                                                Higher confidence
-                                            </span>
+                                            <p className="mt-1 text-xs leading-5 text-[#756970]">
+                                                {verification?.document_count > 0
+                                                    ? `${verification.document_count} document${verification.document_count === 1 ? "" : "s"
+                                                    } submitted for review.`
+                                                    : "No supporting documents have been recorded yet."}
+                                            </p>
                                         </div>
                                     </div>
-                                )}
 
-                            <div className="mt-6 flex items-start gap-3 rounded-xl border border-[#E8DDE1] p-5">
-                                <AlertTriangle
-                                    size={19}
-                                    className="mt-0.5 shrink-0 text-[#B45309]"
-                                />
+                                    <div className="flex items-start gap-3">
+                                        <div
+                                            className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${verification?.status === "verified"
+                                                    ? "bg-[#ECFDF3]"
+                                                    : verification?.status === "rejected"
+                                                        ? "bg-[#FEF2F2]"
+                                                        : "bg-[#FFF7ED]"
+                                                }`}
+                                        >
+                                            <span
+                                                className={`h-2 w-2 rounded-full ${verification?.status === "verified"
+                                                        ? "bg-[#15803D]"
+                                                        : verification?.status === "rejected"
+                                                            ? "bg-[#B91C1C]"
+                                                            : "bg-[#B45309]"
+                                                    }`}
+                                            />
+                                        </div>
 
-                                <p className="text-sm leading-6 text-[#756970]">
-                                    The risk indicator is an informational
-                                    assessment, not a guarantee or legal
-                                    judgment. Renters should still review
-                                    documents, property details, and payment
-                                    requests carefully.
-                                </p>
+                                        <div>
+                                            <p className="text-sm font-semibold text-[#24171C]">
+                                                Administrative review
+                                            </p>
+
+                                            <p className="mt-1 text-xs leading-5 text-[#756970]">
+                                                {verification?.status === "verified"
+                                                    ? "The submitted verification information passed the current RentSure review."
+                                                    : verification?.status === "rejected"
+                                                        ? "The property did not pass the current RentSure verification review."
+                                                        : "The property has not completed the final RentSure review."}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </section>
+
+
                     </div>
 
                     {/* Right */}
@@ -595,11 +717,10 @@ function PropertyDetails() {
                                 type="button"
                                 onClick={handleToggleSave}
                                 disabled={savingProperty}
-                                className={`mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                    isSaved
-                                        ? "border-white bg-white text-[#7A1F3D]"
-                                        : "border-white/30 bg-white/10 text-white hover:bg-white/15"
-                                }`}
+                                className={`mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${isSaved
+                                    ? "border-white bg-white text-[#7A1F3D]"
+                                    : "border-white/30 bg-white/10 text-white hover:bg-white/15"
+                                    }`}
                             >
                                 {savingProperty ? (
                                     <Loader2

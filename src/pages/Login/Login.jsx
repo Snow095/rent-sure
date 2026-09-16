@@ -9,6 +9,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../services/supabase/client";
 
 function Login() {
   const navigate = useNavigate();
@@ -51,26 +52,50 @@ function Login() {
 
     setLoading(true);
 
-    const { data,error } = await signIn({
+    const { data, error } = await signIn({
       email: formData.email.trim(),
       password: formData.password,
     });
 
-    setLoading(false);
-
     if (error) {
+      setLoading(false);
       setErrorMessage(error.message);
       return;
     }
 
-    const role = data?.user?.user_metadata?.role; 
-    if (role === "agent") { 
-      navigate("/agent/dashboard"); 
+    const user = data?.user;
 
-    } else if (role === "admin") {
-      navigate("/admin/dashboard"); 
+    if (!user) {
+      setLoading(false);
+      setErrorMessage("Unable to retrieve your account information.");
+      return;
+    }
 
-    } else { navigate("/renter/dashboard"); }
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    setLoading(false);
+
+    if (profileError) {
+      console.error("Error loading user profile:", profileError);
+
+      setErrorMessage(
+        "Your account was authenticated, but your profile could not be loaded."
+      );
+
+      return;
+    }
+
+    if (profile?.role === "admin") {
+      navigate("/admin/dashboard");
+    } else if (profile?.role === "agent") {
+      navigate("/agent/dashboard");
+    } else {
+      navigate("/renter/dashboard");
+    }
   };
 
   return (

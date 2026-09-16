@@ -2,18 +2,21 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  AlertCircle,
   ArrowLeft,
-  CalendarDays,
   CheckCircle2,
-  Clock3,
-  ExternalLink,
-  FileText,
-  Loader2,
-  MapPin,
-  ShieldCheck,
-  UserRound,
   XCircle,
+  AlertTriangle,
+  FileText,
+  ExternalLink,
+  ShieldCheck,
+  Clock3,
+  UserRound,
+  MapPin,
+  BedDouble,
+  Bath,
+  Loader2,
+  AlertCircle,
+  Info,
 } from "lucide-react";
 
 import { supabase } from "../../../services/supabase/client";
@@ -22,144 +25,190 @@ import { useAuth } from "../../../context/AuthContext";
 function VerificationReview() {
   const { verificationId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, role, loading: authLoading } = useAuth();
 
   const [verification, setVerification] = useState(null);
+  const [property, setProperty] = useState(null);
+  const [agent, setAgent] = useState(null);
   const [documents, setDocuments] = useState([]);
 
-  const [reviewNotes, setReviewNotes] = useState("");
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
-  const [openingDocumentId, setOpeningDocumentId] = useState(null);
+  const [openingDocument, setOpeningDocument] = useState(null);
+
+  const [riskScore, setRiskScore] = useState("");
+  const [reviewNotes, setReviewNotes] = useState("");
+
+  const [saving, setSaving] = useState(false);
+  const [reviewingDocument, setReviewingDocument] = useState(null);
+
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
+  const [documentNotes, setDocumentNotes] = useState({});
+
   useEffect(() => {
-    const fetchVerification = async () => {
-      if (!verificationId) {
-        setErrorMessage("Verification could not be identified.");
-        setLoading(false);
-        return;
+    if (!authLoading && user && role === "admin") {
+      fetchVerification();
+    } else if (!authLoading && (!user || role !== "admin")) {
+      setLoading(false);
+    }
+  }, [verificationId, user, role, authLoading]);
+
+  const fetchVerification = async () => {
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const { data: verificationData, error: verificationError } =
+        await supabase
+          .from("property_verifications")
+          .select(`
+            id,
+            property_id,
+            submitted_by,
+            status,
+            document_count,
+            review_notes,
+            reviewed_by,
+            reviewed_at,
+            created_at,
+            updated_at
+          `)
+          .eq("id", verificationId)
+          .single();
+
+      if (verificationError) {
+        throw verificationError;
       }
 
-      setLoading(true);
-      setErrorMessage("");
-
-      try {
-        const { data: verificationData, error: verificationError } =
-          await supabase
-            .from("property_verifications")
-            .select(`
-              id,
-              property_id,
-              submitted_by,
-              status,
-              document_count,
-              review_notes,
-              reviewed_by,
-              reviewed_at,
-              created_at,
-              updated_at,
-              properties (
-                id,
-                title,
-                location,
-                property_type,
-                annual_rent,
-                bedrooms,
-                bathrooms,
-                verification_status,
-                property_status,
-                agent_id
-              )
-            `)
-            .eq("id", verificationId)
-            .single();
-
-        if (verificationError) {
-          throw verificationError;
-        }
-
-        if (!verificationData) {
-          throw new Error("Verification not found.");
-        }
-
-        setVerification(verificationData);
-        setReviewNotes(verificationData.review_notes || "");
-
-        const { data: documentData, error: documentError } =
-          await supabase
-            .from("verification_documents")
-            .select(`
-              id,
-              verification_id,
-              uploaded_by,
-              document_type,
-              file_name,
-              file_path,
-              file_type,
-              file_size,
-              review_status,
-              review_notes,
-              created_at
-            `)
-            .eq("verification_id", verificationData.id)
-            .order("created_at", { ascending: false });
-
-        if (documentError) {
-          throw documentError;
-        }
-
-        setDocuments(documentData || []);
-      } catch (error) {
-        console.error(
-          "Error loading verification review:",
-          error
-        );
-
-        setErrorMessage(
-          "We couldn't load this verification submission."
-        );
-      } finally {
-        setLoading(false);
+      if (!verificationData) {
+        throw new Error("Verification record could not be found.");
       }
-    };
 
-    fetchVerification();
-  }, [verificationId]);
+      setVerification(verificationData);
+      setReviewNotes(verificationData.review_notes || "");
 
-  const formatDate = (date) => {
-    if (!date) return "Not available";
+      const { data: propertyData, error: propertyError } =
+        await supabase
+          .from("properties")
+          .select(`
+            id,
+            agent_id,
+            title,
+            location,
+            property_type,
+            annual_rent,
+            bedrooms,
+            bathrooms,
+            description,
+            verification_status,
+            property_status,
+            risk_score,
+            created_at,
+            updated_at
+          `)
+          .eq("id", verificationData.property_id)
+          .single();
 
-    return new Date(date).toLocaleDateString("en-NG", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+      if (propertyError) {
+        throw propertyError;
+      }
+
+      setProperty(propertyData);
+
+      if (propertyData?.agent_id) {
+        const { data: agentData, error: agentError } = await supabase
+          .from("profiles")
+          .select("id, full_name, role, created_at")
+          .eq("id", propertyData.agent_id)
+          .eq("role", "agent")
+          .single();
+
+        if (!agentError) {
+          setAgent(agentData);
+        }
+      }
+
+      const { data: documentsData, error: documentsError } =
+        await supabase
+          .from("verification_documents")
+          .select(`
+            id,
+            verification_id,
+            uploaded_by,
+            document_type,
+            file_name,
+            file_path,
+            file_type,
+            file_size,
+            review_status,
+            review_notes,
+            created_at,
+            updated_at
+          `)
+          .eq("verification_id", verificationData.id)
+          .order("created_at", { ascending: true });
+
+      if (documentsError) {
+        throw documentsError;
+      }
+
+      setDocuments(documentsData || []);
+
+      const existingNotes = {};
+
+      (documentsData || []).forEach((document) => {
+        existingNotes[document.id] = document.review_notes || "";
+      });
+
+      setDocumentNotes(existingNotes);
+    } catch (error) {
+      console.error("Error loading verification review:", error);
+
+      setErrorMessage(
+        error.message ||
+          "Unable to load this verification review."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatAmount = (amount) => {
     if (amount === null || amount === undefined) {
-      return "Rent unavailable";
+      return "Not specified";
     }
 
-    return `₦${Number(amount).toLocaleString("en-NG")}/year`;
+    return `₦${Number(amount).toLocaleString()}`;
   };
 
-  const formatDocumentType = (type) => {
-    const labels = {
-      identity: "Identity Document",
-      ownership: "Ownership Document",
-      authorization: "Authorization Document",
-      property: "Property Document",
-      other: "Other Document",
-    };
+  const formatDate = (date) => {
+    if (!date) {
+      return "Not available";
+    }
 
-    return labels[type] || "Document";
+    return new Date(date).toLocaleDateString("en-NG", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  const formatDateTime = (date) => {
+    if (!date) {
+      return "Not available";
+    }
+
+    return new Date(date).toLocaleString("en-NG", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
   };
 
   const formatFileSize = (bytes) => {
-    if (!bytes) return "Unknown size";
+    if (!bytes) {
+      return "Unknown size";
+    }
 
     if (bytes < 1024) {
       return `${bytes} B`;
@@ -177,72 +226,123 @@ function VerificationReview() {
       case "verified":
         return {
           label: "Verified",
-          className: "bg-[#E8F5EC] text-[#15803D]",
+          className:
+            "bg-green-50 text-green-700 border-green-200",
           icon: CheckCircle2,
         };
 
       case "rejected":
         return {
           label: "Rejected",
-          className: "bg-[#FEF2F2] text-[#B91C1C]",
+          className:
+            "bg-red-50 text-red-700 border-red-200",
           icon: XCircle,
         };
 
       case "needs_information":
         return {
           label: "Needs Information",
-          className: "bg-[#FFF7E6] text-[#B45309]",
-          icon: AlertCircle,
+          className:
+            "bg-amber-50 text-amber-700 border-amber-200",
+          icon: AlertTriangle,
         };
 
       case "under_review":
         return {
           label: "Under Review",
-          className: "bg-[#FFF7E6] text-[#B45309]",
+          className:
+            "bg-blue-50 text-blue-700 border-blue-200",
           icon: Clock3,
         };
 
+      case "pending":
       default:
         return {
           label: "Pending",
-          className: "bg-[#F3F4F6] text-[#4B5563]",
+          className:
+            "bg-gray-50 text-gray-700 border-gray-200",
           icon: Clock3,
         };
     }
   };
 
-  const getDocumentStatus = (status) => {
+  const getDocumentStatusDetails = (status) => {
     switch (status) {
       case "approved":
         return {
           label: "Approved",
-          className: "bg-[#E8F5EC] text-[#15803D]",
+          className:
+            "bg-green-50 text-green-700 border-green-200",
         };
 
       case "rejected":
         return {
           label: "Rejected",
-          className: "bg-[#FEF2F2] text-[#B91C1C]",
+          className:
+            "bg-red-50 text-red-700 border-red-200",
         };
 
       case "needs_information":
         return {
           label: "Needs Information",
-          className: "bg-[#FFF7E6] text-[#B45309]",
+          className:
+            "bg-amber-50 text-amber-700 border-amber-200",
         };
 
+      case "pending":
       default:
         return {
           label: "Pending",
-          className: "bg-[#F3F4F6] text-[#4B5563]",
+          className:
+            "bg-gray-50 text-gray-700 border-gray-200",
         };
     }
   };
 
-  const handleViewDocument = async (document) => {
+  const getRiskDetails = (score) => {
+    if (score === null || score === undefined || score === "") {
+      return {
+        label: "Not scored",
+        description:
+          "A risk score has not yet been assigned to this property.",
+        className: "bg-gray-50 text-gray-700 border-gray-200",
+      };
+    }
+
+    const numericScore = Number(score);
+
+    if (numericScore <= 29) {
+      return {
+        label: "Low Risk",
+        description:
+          "The current RentSure review data indicates a lower risk level. Renters should still verify important information independently.",
+        className:
+          "bg-green-50 text-green-700 border-green-200",
+      };
+    }
+
+    if (numericScore <= 59) {
+      return {
+        label: "Moderate Risk",
+        description:
+          "Some factors require additional attention or verification before a renter proceeds.",
+        className:
+          "bg-amber-50 text-amber-700 border-amber-200",
+      };
+    }
+
+    return {
+      label: "High Risk",
+      description:
+        "The available review information indicates that renters should exercise significant caution.",
+      className:
+        "bg-red-50 text-red-700 border-red-200",
+    };
+  };
+
+  const openDocument = async (document) => {
+    setOpeningDocument(document.id);
     setErrorMessage("");
-    setSuccessMessage("");
-    setOpeningDocumentId(document.id);
 
     try {
       const { data, error } = await supabase.storage
@@ -255,7 +355,7 @@ function VerificationReview() {
 
       if (!data?.signedUrl) {
         throw new Error(
-          "Unable to generate document access link."
+          "Unable to generate a secure document link."
         );
       }
 
@@ -265,98 +365,214 @@ function VerificationReview() {
         "noopener,noreferrer"
       );
     } catch (error) {
-      console.error(
-        "Unable to open verification document:",
-        error
-      );
+      console.error("Error opening verification document:", error);
 
       setErrorMessage(
         error.message ||
           "Unable to open this verification document."
       );
     } finally {
-      setOpeningDocumentId(null);
+      setOpeningDocument(null);
     }
   };
 
+  const handleDocumentNoteChange = (documentId, value) => {
+    setDocumentNotes((current) => ({
+      ...current,
+      [documentId]: value,
+    }));
+  };
+
   const handleDocumentReview = async (
-    documentId,
+    document,
     reviewStatus
   ) => {
     setErrorMessage("");
     setSuccessMessage("");
 
-    const { error } = await supabase
-      .from("verification_documents")
-      .update({
-        review_status: reviewStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", documentId);
+    if (
+      ![
+        "approved",
+        "rejected",
+        "needs_information",
+      ].includes(reviewStatus)
+    ) {
+      setErrorMessage("Invalid document review status.");
+      return;
+    }
 
-    if (error) {
+    const notes =
+      documentNotes[document.id]?.trim() || "";
+
+    if (
+      reviewStatus !== "approved" &&
+      !notes
+    ) {
+      setErrorMessage(
+        "Please provide review notes when rejecting a document or requesting more information."
+      );
+      return;
+    }
+
+    setReviewingDocument(document.id);
+
+    try {
+      const { data, error } = await supabase
+        .from("verification_documents")
+        .update({
+          review_status: reviewStatus,
+          review_notes: notes || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", document.id)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setDocuments((current) =>
+        current.map((item) =>
+          item.id === document.id
+            ? data
+            : item
+        )
+      );
+
+      setSuccessMessage(
+        reviewStatus === "approved"
+          ? "Document approved successfully."
+          : reviewStatus === "rejected"
+            ? "Document rejected successfully."
+            : "Additional information requested for this document."
+      );
+    } catch (error) {
       console.error(
-        "Error reviewing document:",
+        "Error reviewing verification document:",
         error
       );
 
       setErrorMessage(
-        "We couldn't update this document's review status."
+        error.message ||
+          "Unable to update this document review."
       );
-
-      return;
+    } finally {
+      setReviewingDocument(null);
     }
-
-    setDocuments((previous) =>
-      previous.map((document) =>
-        document.id === documentId
-          ? {
-              ...document,
-              review_status: reviewStatus,
-            }
-          : document
-      )
-    );
-
-    setSuccessMessage(
-      "Document review status updated."
-    );
   };
 
   const handleFinalDecision = async (decision) => {
-    if (!verification) return;
-
     setErrorMessage("");
     setSuccessMessage("");
 
-    if (!user) {
+    if (
+      ![
+        "verified",
+        "rejected",
+        "needs_information",
+      ].includes(decision)
+    ) {
+      setErrorMessage("Invalid verification decision.");
+      return;
+    }
+
+    const parsedRiskScore =
+      riskScore === "" ? null : Number(riskScore);
+
+    if (
+      parsedRiskScore === null ||
+      !Number.isInteger(parsedRiskScore) ||
+      parsedRiskScore < 0 ||
+      parsedRiskScore > 100
+    ) {
       setErrorMessage(
-        "Your admin session could not be identified. Please log in again."
+        "Please enter a valid risk score between 0 and 100."
       );
       return;
     }
 
-    if (!reviewNotes.trim() && decision !== "verified") {
+    if (
+      decision !== "verified" &&
+      !reviewNotes.trim()
+    ) {
       setErrorMessage(
-        "Please provide review notes when rejecting a submission or requesting more information."
+        "Please provide review notes for this decision."
       );
       return;
     }
 
-    setProcessing(true);
+    if (
+      decision === "verified"
+    ) {
+      const rejectedDocument = documents.find(
+        (document) =>
+          document.review_status === "rejected"
+      );
+
+      if (rejectedDocument) {
+        setErrorMessage(
+          "This verification cannot be approved while a submitted document is marked as rejected."
+        );
+        return;
+      }
+
+      const pendingDocument = documents.find(
+        (document) =>
+          document.review_status === "pending"
+      );
+
+      if (pendingDocument) {
+        setErrorMessage(
+          "Please review all submitted documents before approving this verification."
+        );
+        return;
+      }
+
+      const needsInformationDocument = documents.find(
+        (document) =>
+          document.review_status ===
+          "needs_information"
+      );
+
+      if (needsInformationDocument) {
+        setErrorMessage(
+          "This verification has a document that requires more information."
+        );
+        return;
+      }
+    }
+
+    const decisionLabels = {
+      verified: "approve this property verification",
+      rejected: "reject this property verification",
+      needs_information:
+        "request additional information for this verification",
+    };
+
+    const confirmed = window.confirm(
+      `Are you sure you want to ${decisionLabels[decision]}?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSaving(true);
 
     try {
-      const reviewedAt = new Date().toISOString();
+      const now = new Date().toISOString();
 
       const { error: verificationError } =
         await supabase
           .from("property_verifications")
           .update({
             status: decision,
-            review_notes: reviewNotes.trim() || null,
+            review_notes:
+              reviewNotes.trim() || null,
             reviewed_by: user.id,
-            reviewed_at: reviewedAt,
-            updated_at: reviewedAt,
+            reviewed_at: now,
+            updated_at: now,
           })
           .eq("id", verification.id);
 
@@ -364,39 +580,64 @@ function VerificationReview() {
         throw verificationError;
       }
 
-      let verificationStatus = "pending";
+      const propertyUpdate = {
+        verification_status: decision,
+        risk_score: parsedRiskScore,
+        updated_at: now,
+      };
 
       if (decision === "verified") {
-        verificationStatus = "verified";
-      } else if (decision === "rejected") {
-        verificationStatus = "rejected";
-      } else if (decision === "needs_information") {
-        verificationStatus = "needs_information";
+        propertyUpdate.property_status = "active";
       }
 
-      const { error: propertyError } = await supabase
-        .from("properties")
-        .update({
-          verification_status: verificationStatus,
-          updated_at: reviewedAt,
-        })
-        .eq("id", verification.property_id);
+      if (decision === "rejected") {
+        propertyUpdate.property_status = "flagged";
+      }
+
+      if (
+        decision === "needs_information"
+      ) {
+        propertyUpdate.property_status = "active";
+      }
+
+      const { error: propertyError } =
+        await supabase
+          .from("properties")
+          .update(propertyUpdate)
+          .eq("id", verification.property_id);
 
       if (propertyError) {
         throw propertyError;
       }
 
-      setVerification((previous) => ({
-        ...previous,
+      setVerification((current) => ({
+        ...current,
         status: decision,
-        review_notes: reviewNotes.trim() || null,
+        review_notes:
+          reviewNotes.trim() || null,
         reviewed_by: user.id,
-        reviewed_at: reviewedAt,
-        updated_at: reviewedAt,
+        reviewed_at: now,
+        updated_at: now,
+      }));
+
+      setProperty((current) => ({
+        ...current,
+        verification_status: decision,
+        risk_score: parsedRiskScore,
+        property_status:
+          decision === "verified"
+            ? "active"
+            : decision === "rejected"
+              ? "flagged"
+              : current.property_status,
       }));
 
       setSuccessMessage(
-        "Verification decision saved successfully."
+        decision === "verified"
+          ? "Property verification approved successfully."
+          : decision === "rejected"
+            ? "Property rejected and flagged successfully."
+            : "Additional information has been requested successfully."
       );
 
       setTimeout(() => {
@@ -404,477 +645,838 @@ function VerificationReview() {
       }, 1200);
     } catch (error) {
       console.error(
-        "Error saving verification decision:",
+        "Error completing verification decision:",
         error
       );
 
       setErrorMessage(
-        "We couldn't save the verification decision. Please try again."
+        error.message ||
+          "Unable to complete the verification decision."
       );
     } finally {
-      setProcessing(false);
+      setSaving(false);
     }
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#FAF8F9] px-5">
-        <div className="text-center">
-          <Loader2
-            size={32}
-            className="mx-auto animate-spin text-[#7A1F3D]"
-          />
+      <main className="min-h-screen bg-[#FAF8F9] px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[60vh] max-w-6xl items-center justify-center">
+          <div className="text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#F8EDEF]">
+              <Loader2
+                className="h-6 w-6 animate-spin text-[#7A1F3D]"
+                aria-hidden="true"
+              />
+            </div>
 
-          <p className="mt-4 text-sm font-medium text-[#756970]">
-            Loading verification submission...
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  if (!verification) {
-    return (
-      <main className="min-h-screen bg-[#FAF8F9] px-5 py-16 sm:px-8">
-        <div className="mx-auto max-w-lg rounded-2xl border border-[#E8DDE1] bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#FEF2F2]">
-            <AlertCircle
-              size={27}
-              className="text-[#B91C1C]"
-            />
+            <p className="mt-4 text-sm font-medium text-[#756970]">
+              Loading verification review...
+            </p>
           </div>
-
-          <h1 className="mt-5 text-2xl font-bold text-[#24171C]">
-            Verification not found
-          </h1>
-
-          <p className="mt-3 text-sm leading-6 text-[#756970]">
-            The requested verification submission could not be
-            found.
-          </p>
-
-          <Link
-            to="/admin/verification"
-            className="mt-7 inline-flex items-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
-          >
-            <ArrowLeft size={17} />
-            Back to Verification Queue
-          </Link>
         </div>
       </main>
     );
   }
 
-  const property = verification.properties;
-  const status = getStatusDetails(verification.status);
-  const StatusIcon = status.icon;
+  if (!user || role !== "admin") {
+    return (
+      <main className="min-h-screen bg-[#FAF8F9] px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center">
+          <div className="w-full rounded-2xl border border-[#E8DDE1] bg-white p-8 text-center shadow-sm">
+            <AlertCircle className="mx-auto h-12 w-12 text-red-600" />
+
+            <h1 className="mt-5 text-2xl font-bold text-[#24171C]">
+              Access Restricted
+            </h1>
+
+            <p className="mt-3 text-sm leading-6 text-[#756970]">
+              Only administrators can review property
+              verification submissions.
+            </p>
+
+            <Link
+              to="/"
+              className="mt-6 inline-flex rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
+            >
+              Return Home
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!verification || !property) {
+    return (
+      <main className="min-h-screen bg-[#FAF8F9] px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+
+              <div>
+                <h1 className="font-semibold text-red-800">
+                  Unable to load verification
+                </h1>
+
+                <p className="mt-1 text-sm leading-6 text-red-700">
+                  {errorMessage ||
+                    "The requested verification record could not be found."}
+                </p>
+              </div>
+            </div>
+
+            <Link
+              to="/admin/verification"
+              className="mt-5 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Verification
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const statusDetails = getStatusDetails(
+    verification.status
+  );
+
+  const StatusIcon = statusDetails.icon;
+
+  const riskDetails = getRiskDetails(
+    property.risk_score
+  );
 
   return (
     <main className="min-h-screen bg-[#FAF8F9]">
-      {/* Header */}
-      <section className="border-b border-[#E8DDE1] bg-white">
-        <div className="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 sm:py-12 lg:px-10 lg:py-14 xl:px-12">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+
+        {/* Header */}
+        <div className="mb-8">
           <Link
             to="/admin/verification"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-[#7A1F3D] hover:underline"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-[#7A1F3D] transition hover:text-[#4A1025]"
           >
-            <ArrowLeft size={16} />
-            Back to Verification Queue
+            <ArrowLeft className="h-4 w-4" />
+            Back to Verification
           </Link>
 
-          <div className="mt-7 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-sm font-semibold text-[#7A1F3D]">
-                Admin Review
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-3xl font-bold tracking-tight text-[#24171C] sm:text-4xl">
+                  Verification Review
+                </h1>
+
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${statusDetails.className}`}
+                >
+                  <StatusIcon className="h-3.5 w-3.5" />
+                  {statusDetails.label}
+                </span>
+              </div>
+
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#756970]">
+                Review the submitted documents, assess the available
+                information, assign a RentSure risk score, and record
+                the final verification decision.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-[#E8DDE1] bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-[#756970]">
+                Verification ID
               </p>
 
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#24171C] sm:text-4xl">
-                {property?.title || "Property Verification"}
-              </h1>
+              <p className="mt-1 text-sm font-bold text-[#24171C]">
+                #{verification.id}
+              </p>
+            </div>
+          </div>
+        </div>
 
-              {property?.location && (
-                <div className="mt-3 flex items-center gap-2 text-sm text-[#756970]">
-                  <MapPin
-                    size={17}
-                    className="shrink-0 text-[#7A1F3D]"
-                  />
-                  {property.location}
+        {/* Alerts */}
+        {(errorMessage || successMessage) && (
+          <div className="mb-6">
+            {errorMessage && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+
+                  <div>
+                    <p className="text-sm font-semibold text-red-800">
+                      Action could not be completed
+                    </p>
+
+                    <p className="mt-1 text-sm leading-6 text-red-700">
+                      {errorMessage}
+                    </p>
+                  </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            <span
-              className={`inline-flex w-fit items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ${status.className}`}
-            >
-              <StatusIcon size={17} />
-              {status.label}
-            </span>
-          </div>
-        </div>
-      </section>
+            {successMessage && (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
 
-      <section className="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 sm:py-12 lg:px-10 lg:py-14 xl:px-12">
-        {/* Messages */}
-        {errorMessage && (
-          <div className="mb-6 flex gap-3 rounded-xl border border-[#F1CACA] bg-[#FEF2F2] px-5 py-4">
-            <AlertCircle
-              size={20}
-              className="mt-0.5 shrink-0 text-[#B91C1C]"
-            />
-
-            <p className="text-sm leading-6 text-[#B91C1C]">
-              {errorMessage}
-            </p>
+                  <p className="text-sm font-medium leading-6 text-green-700">
+                    {successMessage}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {successMessage && (
-          <div className="mb-6 flex gap-3 rounded-xl border border-[#C8E6D0] bg-[#E8F5EC] px-5 py-4">
-            <CheckCircle2
-              size={20}
-              className="mt-0.5 shrink-0 text-[#15803D]"
-            />
+        <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
 
-            <p className="text-sm leading-6 text-[#15803D]">
-              {successMessage}
-            </p>
-          </div>
-        )}
+          {/* Main Content */}
+          <div className="space-y-6">
 
-        {/* Property Summary */}
-        <div className="grid gap-5 lg:grid-cols-3">
-          <InfoCard
-            label="Property Type"
-            value={property?.property_type || "Not available"}
-            icon={ShieldCheck}
-          />
+            {/* Property */}
+            <section className="overflow-hidden rounded-2xl border border-[#E8DDE1] bg-white shadow-sm">
+              <div className="border-b border-[#E8DDE1] p-6 sm:p-7">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#F8EDEF]">
+                    <ShieldCheck className="h-5 w-5 text-[#7A1F3D]" />
+                  </div>
 
-          <InfoCard
-            label="Annual Rent"
-            value={formatAmount(property?.annual_rent)}
-            icon={CalendarDays}
-          />
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                      Property Under Review
+                    </p>
 
-          <InfoCard
-            label="Submitted"
-            value={formatDate(verification.created_at)}
-            icon={Clock3}
-          />
-        </div>
+                    <h2 className="mt-1 text-xl font-bold text-[#24171C]">
+                      {property.title}
+                    </h2>
+                  </div>
+                </div>
 
-        {/* Agent */}
-        <div className="mt-8 rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-7">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#F8EDEF]">
-              <UserRound
-                size={22}
-                className="text-[#7A1F3D]"
-              />
-            </div>
-
-            <div>
-              <h2 className="text-lg font-bold text-[#24171C]">
-                Submitting Agent
-              </h2>
-
-              <p className="mt-1 text-sm text-[#756970]">
-                Agent ID: {verification.submitted_by}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Documents */}
-        <div className="mt-8 rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-8">
-          <div>
-            <h2 className="text-xl font-bold text-[#24171C]">
-              Verification Documents
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-[#756970]">
-              Review each submitted document before making the
-              overall verification decision.
-            </p>
-          </div>
-
-          {documents.length === 0 ? (
-            <div className="mt-7 rounded-xl bg-[#FAF8F9] px-5 py-10 text-center">
-              <FileText
-                size={28}
-                className="mx-auto text-[#756970]"
-              />
-
-              <p className="mt-3 text-sm font-semibold text-[#24171C]">
-                No documents submitted
-              </p>
-            </div>
-          ) : (
-            <div className="mt-7 space-y-4">
-              {documents.map((document) => {
-                const documentStatus = getDocumentStatus(
-                  document.review_status
-                );
-
-                return (
-                  <div
-                    key={document.id}
-                    className="rounded-xl border border-[#E8DDE1] p-5"
-                  >
-                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex min-w-0 gap-4">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#F8EDEF]">
-                          <FileText
-                            size={20}
-                            className="text-[#7A1F3D]"
-                          />
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-[#24171C]">
-                            {document.file_name}
-                          </p>
-
-                          <p className="mt-1 text-xs text-[#756970]">
-                            {formatDocumentType(
-                              document.document_type
-                            )}
-                            {" • "}
-                            {formatFileSize(
-                              document.file_size
-                            )}
-                          </p>
-
-                          <p className="mt-1 text-xs text-[#756970]">
-                            Uploaded{" "}
-                            {formatDate(document.created_at)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`rounded-full px-3 py-1.5 text-xs font-semibold ${documentStatus.className}`}
-                        >
-                          {documentStatus.label}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleViewDocument(document)
-                          }
-                          disabled={
-                            openingDocumentId === document.id
-                          }
-                          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#E8DDE1] px-4 py-2.5 text-xs font-semibold text-[#7A1F3D] transition hover:border-[#7A1F3D] hover:bg-[#F8EDEF] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {openingDocumentId === document.id ? (
-                            <>
-                              <Loader2
-                                size={15}
-                                className="animate-spin"
-                              />
-                              Opening...
-                            </>
-                          ) : (
-                            <>
-                              <ExternalLink size={15} />
-                              View Document
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDocumentReview(
-                              document.id,
-                              "approved"
-                            )
-                          }
-                          disabled={processing}
-                          className="rounded-lg border border-[#C8E6D0] px-3 py-2 text-xs font-semibold text-[#15803D] transition hover:bg-[#E8F5EC] disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDocumentReview(
-                              document.id,
-                              "rejected"
-                            )
-                          }
-                          disabled={processing}
-                          className="rounded-lg border border-[#F1CACA] px-3 py-2 text-xs font-semibold text-[#B91C1C] transition hover:bg-[#FEF2F2] disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDocumentReview(
-                              document.id,
-                              "needs_information"
-                            )
-                          }
-                          disabled={processing}
-                          className="rounded-lg border border-[#F3D8A3] px-3 py-2 text-xs font-semibold text-[#B45309] transition hover:bg-[#FFF7E6] disabled:opacity-50"
-                        >
-                          More Info
-                        </button>
-                      </div>
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl bg-[#FAF8F9] p-4">
+                    <div className="flex items-center gap-2 text-[#756970]">
+                      <MapPin className="h-4 w-4" />
+                      <span className="text-xs font-semibold uppercase tracking-wide">
+                        Location
+                      </span>
                     </div>
 
-                    {document.review_notes && (
-                      <div className="mt-4 rounded-lg bg-[#FAF8F9] p-4">
-                        <p className="text-xs font-semibold text-[#756970]">
-                          Existing Review Note
-                        </p>
-
-                        <p className="mt-1 text-sm leading-6 text-[#24171C]">
-                          {document.review_notes}
-                        </p>
-                      </div>
-                    )}
+                    <p className="mt-2 text-sm font-semibold text-[#24171C]">
+                      {property.location}
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        {/* Decision */}
-        <div className="mt-8 rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-8">
-          <h2 className="text-xl font-bold text-[#24171C]">
-            Verification Decision
-          </h2>
+                  <div className="rounded-xl bg-[#FAF8F9] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                      Property Type
+                    </p>
 
-          <p className="mt-2 text-sm leading-6 text-[#756970]">
-            Record the final outcome of this verification review.
-          </p>
+                    <p className="mt-2 text-sm font-semibold text-[#24171C]">
+                      {property.property_type}
+                    </p>
+                  </div>
 
-          <div className="mt-6">
-            <label
-              htmlFor="reviewNotes"
-              className="text-sm font-semibold text-[#24171C]"
-            >
-              Review Notes
-            </label>
+                  <div className="rounded-xl bg-[#FAF8F9] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                      Annual Rent
+                    </p>
 
-            <textarea
-              id="reviewNotes"
-              value={reviewNotes}
-              onChange={(event) =>
-                setReviewNotes(event.target.value)
-              }
-              rows={6}
-              maxLength={1500}
-              placeholder="Explain the reason for your decision or identify any additional information required..."
-              className="mt-3 w-full resize-y rounded-lg border border-[#E8DDE1] px-4 py-3 text-sm leading-6 text-[#24171C] outline-none transition placeholder:text-[#A3979D] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
-            />
+                    <p className="mt-2 text-sm font-semibold text-[#24171C]">
+                      {formatAmount(property.annual_rent)}
+                    </p>
+                  </div>
 
-            <p className="mt-2 text-xs text-[#756970]">
-              {reviewNotes.length}/1500 characters
-            </p>
+                  <div className="rounded-xl bg-[#FAF8F9] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                      Listing Status
+                    </p>
+
+                    <p className="mt-2 text-sm font-semibold capitalize text-[#24171C]">
+                      {property.property_status}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <span className="inline-flex items-center gap-2 rounded-lg border border-[#E8DDE1] bg-white px-3 py-2 text-sm font-medium text-[#756970]">
+                    <BedDouble className="h-4 w-4" />
+                    {property.bedrooms}{" "}
+                    {property.bedrooms === 1
+                      ? "Bedroom"
+                      : "Bedrooms"}
+                  </span>
+
+                  <span className="inline-flex items-center gap-2 rounded-lg border border-[#E8DDE1] bg-white px-3 py-2 text-sm font-medium text-[#756970]">
+                    <Bath className="h-4 w-4" />
+                    {property.bathrooms}{" "}
+                    {property.bathrooms === 1
+                      ? "Bathroom"
+                      : "Bathrooms"}
+                  </span>
+                </div>
+              </div>
+
+              {property.description && (
+                <div className="p-6 sm:p-7">
+                  <h3 className="text-sm font-bold text-[#24171C]">
+                    Property Description
+                  </h3>
+
+                  <p className="mt-3 whitespace-pre-line text-sm leading-7 text-[#756970]">
+                    {property.description}
+                  </p>
+                </div>
+              )}
+            </section>
+
+            {/* Agent */}
+            <section className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-7">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F8EDEF]">
+                  <UserRound className="h-5 w-5 text-[#7A1F3D]" />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-bold text-[#24171C]">
+                    Submitted By
+                  </h2>
+
+                  <p className="text-sm text-[#756970]">
+                    Property agent information
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-xl bg-[#FAF8F9] p-5">
+                {agent ? (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-[#24171C]">
+                        {agent.full_name}
+                      </p>
+
+                      <p className="mt-1 text-xs text-[#756970]">
+                        Agent account created{" "}
+                        {formatDate(agent.created_at)}
+                      </p>
+                    </div>
+
+                    <span className="inline-flex w-fit rounded-full border border-[#E8DDE1] bg-white px-3 py-1.5 text-xs font-semibold text-[#7A1F3D]">
+                      Agent
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#756970]">
+                    Agent profile information could not be loaded.
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {/* Documents */}
+            <section className="rounded-2xl border border-[#E8DDE1] bg-white shadow-sm">
+              <div className="border-b border-[#E8DDE1] p-6 sm:p-7">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-[#24171C]">
+                      Verification Documents
+                    </h2>
+
+                    <p className="mt-1 text-sm text-[#756970]">
+                      Review each submitted document before making the
+                      final verification decision.
+                    </p>
+                  </div>
+
+                  <span className="inline-flex w-fit rounded-full bg-[#F8EDEF] px-3 py-1.5 text-xs font-semibold text-[#7A1F3D]">
+                    {documents.length}{" "}
+                    {documents.length === 1
+                      ? "Document"
+                      : "Documents"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="divide-y divide-[#E8DDE1]">
+                {documents.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <FileText className="mx-auto h-10 w-10 text-[#756970]" />
+
+                    <p className="mt-3 text-sm font-semibold text-[#24171C]">
+                      No documents submitted
+                    </p>
+
+                    <p className="mt-1 text-sm text-[#756970]">
+                      This verification does not currently have any
+                      document records.
+                    </p>
+                  </div>
+                ) : (
+                  documents.map((document) => {
+                    const documentStatus =
+                      getDocumentStatusDetails(
+                        document.review_status
+                      );
+
+                    const isReviewing =
+                      reviewingDocument === document.id;
+
+                    return (
+                      <div
+                        key={document.id}
+                        className="p-6 sm:p-7"
+                      >
+                        <div className="flex flex-col gap-5">
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#F8EDEF]">
+                                <FileText className="h-5 w-5 text-[#7A1F3D]" />
+                              </div>
+
+                              <div className="min-w-0">
+                                <p className="break-words font-semibold text-[#24171C]">
+                                  {document.file_name}
+                                </p>
+
+                                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#756970]">
+                                  <span>
+                                    Type:{" "}
+                                    <strong className="text-[#24171C]">
+                                      {document.document_type}
+                                    </strong>
+                                  </span>
+
+                                  <span>
+                                    Size:{" "}
+                                    <strong className="text-[#24171C]">
+                                      {formatFileSize(
+                                        document.file_size
+                                      )}
+                                    </strong>
+                                  </span>
+
+                                  <span>
+                                    Submitted:{" "}
+                                    <strong className="text-[#24171C]">
+                                      {formatDate(
+                                        document.created_at
+                                      )}
+                                    </strong>
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <span
+                              className={`inline-flex w-fit shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${documentStatus.className}`}
+                            >
+                              {documentStatus.label}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openDocument(document)
+                            }
+                            disabled={
+                              openingDocument === document.id
+                            }
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#E8DDE1] px-4 py-3 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+                          >
+                            {openingDocument === document.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ExternalLink className="h-4 w-4" />
+                            )}
+
+                            {openingDocument === document.id
+                              ? "Opening..."
+                              : "Open Secure Document"}
+                          </button>
+
+                          <div>
+                            <label
+                              htmlFor={`document-notes-${document.id}`}
+                              className="text-sm font-semibold text-[#24171C]"
+                            >
+                              Document Review Notes
+                            </label>
+
+                            <textarea
+                              id={`document-notes-${document.id}`}
+                              value={
+                                documentNotes[
+                                  document.id
+                                ] || ""
+                              }
+                              onChange={(event) =>
+                                handleDocumentNoteChange(
+                                  document.id,
+                                  event.target.value
+                                )
+                              }
+                              rows={3}
+                              maxLength={1000}
+                              placeholder="Add notes about this document if needed..."
+                              className="mt-2 w-full resize-y rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 text-sm text-[#24171C] outline-none transition placeholder:text-[#A2989D] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
+                            />
+
+                            <p className="mt-1 text-right text-xs text-[#756970]">
+                              {(documentNotes[
+                                document.id
+                              ] || "").length}
+                              /1000
+                            </p>
+                          </div>
+
+                          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDocumentReview(
+                                  document,
+                                  "approved"
+                                )
+                              }
+                              disabled={isReviewing}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isReviewing ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4" />
+                              )}
+                              Approve
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDocumentReview(
+                                  document,
+                                  "needs_information"
+                                )
+                              }
+                              disabled={isReviewing}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isReviewing ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <AlertTriangle className="h-4 w-4" />
+                              )}
+                              Needs Information
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDocumentReview(
+                                  document,
+                                  "rejected"
+                                )
+                              }
+                              disabled={isReviewing}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isReviewing ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <XCircle className="h-4 w-4" />
+                              )}
+                              Reject
+                            </button>
+                          </div>
+
+                          {document.review_notes && (
+                            <div className="rounded-xl border border-[#E8DDE1] bg-[#FAF8F9] p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                                Current Review Notes
+                              </p>
+
+                              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[#24171C]">
+                                {document.review_notes}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
           </div>
 
-          <div className="mt-7 grid gap-3 sm:grid-cols-3">
-            <button
-              type="button"
-              disabled={processing}
-              onClick={() =>
-                handleFinalDecision("verified")
-              }
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#15803D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <CheckCircle2 size={18} />
-              Verify Property
-            </button>
+          {/* Sidebar */}
+          <aside className="space-y-6">
 
-            <button
-              type="button"
-              disabled={processing}
-              onClick={() =>
-                handleFinalDecision("needs_information")
-              }
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-[#F3D8A3] px-5 py-3 text-sm font-semibold text-[#B45309] transition hover:bg-[#FFF7E6] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <AlertCircle size={18} />
-              Request Information
-            </button>
-
-            <button
-              type="button"
-              disabled={processing}
-              onClick={() =>
-                handleFinalDecision("rejected")
-              }
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#B91C1C] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <XCircle size={18} />
-              Reject Property
-            </button>
-          </div>
-
-          {processing && (
-            <div className="mt-5 flex items-center justify-center gap-2 text-sm text-[#756970]">
-              <Loader2
-                size={17}
-                className="animate-spin text-[#7A1F3D]"
-              />
-              Saving verification decision...
-            </div>
-          )}
-        </div>
-
-        {/* Admin Guidance */}
-        <div className="mt-8 rounded-2xl bg-[#2D0A17] p-6 sm:p-7">
-          <div className="flex gap-4">
-            <ShieldCheck
-              size={23}
-              className="mt-0.5 shrink-0 text-[#C9A227]"
-            />
-
-            <div>
-              <h2 className="text-sm font-bold text-white">
-                Review carefully
+            {/* Submission Summary */}
+            <section className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-[#24171C]">
+                Submission Summary
               </h2>
 
-              <p className="mt-2 text-sm leading-6 text-[#E8DDE1]">
-                RentSure verification is an evidence-review workflow,
-                not a legal determination. Review the submitted
-                information carefully and use review notes to explain
-                decisions or identify missing information.
+              <div className="mt-5 space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                    Submitted
+                  </p>
+
+                  <p className="mt-1 text-sm font-semibold text-[#24171C]">
+                    {formatDateTime(
+                      verification.created_at
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                    Document Count
+                  </p>
+
+                  <p className="mt-1 text-sm font-semibold text-[#24171C]">
+                    {documents.length}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                    Current Property Verification
+                  </p>
+
+                  <p className="mt-1 text-sm font-semibold capitalize text-[#24171C]">
+                    {property.verification_status}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                    Current Risk Score
+                  </p>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-xl font-bold text-[#24171C]">
+                      {property.risk_score ??
+                        "Not scored"}
+                    </span>
+
+                    {property.risk_score !== null &&
+                      property.risk_score !== undefined && (
+                        <span
+                          className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${riskDetails.className}`}
+                        >
+                          {riskDetails.label}
+                        </span>
+                      )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Risk Score */}
+            <section className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F8EDEF]">
+                  <AlertTriangle className="h-5 w-5 text-[#7A1F3D]" />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-bold text-[#24171C]">
+                    RentSure Risk Score
+                  </h2>
+
+                  <p className="mt-1 text-sm leading-6 text-[#756970]">
+                    Assign a score from 0 to 100 based on the information
+                    available during review.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5">
+                <label
+                  htmlFor="risk-score"
+                  className="text-sm font-semibold text-[#24171C]"
+                >
+                  Risk Score
+                </label>
+
+                <div className="relative mt-2">
+                  <input
+                    id="risk-score"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={riskScore}
+                    onChange={(event) =>
+                      setRiskScore(event.target.value)
+                    }
+                    placeholder="0 - 100"
+                    className="w-full rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 pr-16 text-sm font-semibold text-[#24171C] outline-none transition placeholder:font-normal placeholder:text-[#A2989D] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
+                  />
+
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-[#756970]">
+                    / 100
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <div className="rounded-lg bg-green-50 p-3 text-center">
+                    <p className="text-xs font-semibold text-green-700">
+                      0–29
+                    </p>
+                    <p className="mt-1 text-[11px] text-green-600">
+                      Low
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg bg-amber-50 p-3 text-center">
+                    <p className="text-xs font-semibold text-amber-700">
+                      30–59
+                    </p>
+                    <p className="mt-1 text-[11px] text-amber-600">
+                      Moderate
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg bg-red-50 p-3 text-center">
+                    <p className="text-xs font-semibold text-red-700">
+                      60–100
+                    </p>
+                    <p className="mt-1 text-[11px] text-red-600">
+                      High
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Review Notes */}
+            <section className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-[#24171C]">
+                Review Notes
+              </h2>
+
+              <p className="mt-1 text-sm leading-6 text-[#756970]">
+                Explain the decision clearly. Notes are required when
+                rejecting a verification or requesting more information.
               </p>
-            </div>
-          </div>
+
+              <textarea
+                value={reviewNotes}
+                onChange={(event) =>
+                  setReviewNotes(event.target.value)
+                }
+                rows={7}
+                maxLength={2000}
+                placeholder="Enter the reason for your verification decision..."
+                className="mt-5 w-full resize-y rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 text-sm leading-6 text-[#24171C] outline-none transition placeholder:text-[#A2989D] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
+              />
+
+              <p className="mt-1 text-right text-xs text-[#756970]">
+                {reviewNotes.length}/2000
+              </p>
+            </section>
+
+            {/* Final Decision */}
+            <section className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-[#24171C]">
+                Final Decision
+              </h2>
+
+              <p className="mt-1 text-sm leading-6 text-[#756970]">
+                This action will update the verification record and the
+                related property.
+              </p>
+
+              <div className="mt-5 space-y-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleFinalDecision("verified")
+                  }
+                  disabled={saving}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+
+                  Approve Verification
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleFinalDecision(
+                      "needs_information"
+                    )
+                  }
+                  disabled={saving}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4" />
+                  )}
+
+                  Request More Information
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleFinalDecision("rejected")
+                  }
+                  disabled={saving}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <XCircle className="h-4 w-4" />
+                  )}
+
+                  Reject Verification
+                </button>
+              </div>
+            </section>
+
+            {/* Security Notice */}
+            <section className="rounded-2xl border border-[#E8DDE1] bg-[#2D0A17] p-6 text-white shadow-sm">
+              <div className="flex items-start gap-3">
+                <Info className="mt-0.5 h-5 w-5 shrink-0 text-[#C9A227]" />
+
+                <div>
+                  <h2 className="text-sm font-bold">
+                    Admin Review Notice
+                  </h2>
+
+                  <p className="mt-2 text-sm leading-6 text-white/75">
+                    Verification decisions should be based on the
+                    documents and information available through RentSure.
+                    A RentSure verification does not constitute a legal
+                    guarantee of ownership, title, property condition,
+                    availability, or transaction outcome.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+          </aside>
         </div>
-      </section>
-    </main>
-  );
-}
-
-function InfoCard({ label, value, icon: Icon }) {
-  return (
-    <div className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#F8EDEF]">
-        <Icon
-          size={21}
-          className="text-[#7A1F3D]"
-        />
       </div>
-
-      <p className="mt-5 text-xs font-bold uppercase tracking-wide text-[#756970]">
-        {label}
-      </p>
-
-      <p className="mt-2 text-lg font-bold text-[#24171C]">
-        {value}
-      </p>
-    </div>
+    </main>
   );
 }
 

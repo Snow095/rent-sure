@@ -1,363 +1,572 @@
 
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 import {
-    Users,
-    Building2,
-    UserCheck,
-    ShieldCheck,
-    FileWarning,
-    ArrowRight,
-    Clock3,
-    CheckCircle2,
+  AlertTriangle,
+  Building2,
+  CalendarDays,
+  FileWarning,
+  Loader2,
+  ShieldCheck,
+  UserRound,
+  Users,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { supabase } from "../../../services/supabase/client";
 
-const overviewCards = [
-    {
-        title: "Total Users",
-        value: "248",
-        description: "Registered renters and agents",
-        icon: Users,
-    },
-    {
-        title: "Properties",
-        value: "126",
-        description: "Properties currently listed",
-        icon: Building2,
-    },
-    {
-        title: "Verified Agents",
-        value: "42",
-        description: "Agents that passed verification",
-        icon: UserCheck,
-    },
-    {
-        title: "Pending Verification",
-        value: "8",
-        description: "Items awaiting admin review",
-        icon: ShieldCheck,
-    },
-];
+function AdminDashboard() {
+  const [stats, setStats] = useState({
+    users: 0,
+    agents: 0,
+    properties: 0,
+    verifiedProperties: 0,
+    pendingVerifications: 0,
+    reports: 0,
+    reportsUnderReview: 0,
+    viewingRequests: 0,
+    pendingViewingRequests: 0,
+    flaggedProperties: 0,
+    highSeverityReports: 0,
+  });
 
-const activityItems = [
-    {
-        title: "New agent verification request",
-        description: "An agent submitted documents for review.",
-        time: "12 minutes ago",
-        icon: ShieldCheck,
-        iconWrapper: "bg-[#FFF7ED] text-[#B45309]",
-    },
-    {
-        title: "Property reported",
-        description: "A renter submitted a concern about a property.",
-        time: "34 minutes ago",
-        icon: FileWarning,
-        iconWrapper: "bg-[#FDECEC] text-[#B91C1C]",
-    },
-    {
-        title: "New property submitted",
-        description: "A new property is waiting for verification.",
-        time: "1 hour ago",
-        icon: Building2,
-        iconWrapper: "bg-[#F8EDEF] text-[#7A1F3D]",
-    },
-];
+  const [recentVerifications, setRecentVerifications] =
+    useState([]);
 
-function Dashboard() {
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+  useEffect(() => {
+    const loadDashboard = async () => {
+      setLoading(true);
+      setErrorMessage("");
+
+      try {
+        const [
+          usersResult,
+          agentsResult,
+          propertiesResult,
+          verifiedPropertiesResult,
+          pendingVerificationsResult,
+          reportsResult,
+          reportsReviewResult,
+          viewingRequestsResult,
+          pendingViewingRequestsResult,
+          flaggedPropertiesResult,
+          highSeverityReportsResult,
+          recentVerificationResult,
+        ] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id", {
+              count: "exact",
+              head: true,
+            }),
+
+          supabase
+            .from("profiles")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .eq("role", "agent"),
+
+          supabase
+            .from("properties")
+            .select("id", {
+              count: "exact",
+              head: true,
+            }),
+
+          supabase
+            .from("properties")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .eq("verification_status", "verified"),
+
+          supabase
+            .from("property_verifications")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .in("status", [
+              "pending",
+              "under_review",
+              "needs_information",
+            ]),
+
+          supabase
+            .from("reports")
+            .select("id", {
+              count: "exact",
+              head: true,
+            }),
+
+          supabase
+            .from("reports")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .eq("status", "under_review"),
+
+          supabase
+            .from("viewing_requests")
+            .select("id", {
+              count: "exact",
+              head: true,
+            }),
+
+          supabase
+            .from("viewing_requests")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .eq("status", "pending"),
+
+          supabase
+            .from("properties")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .eq("property_status", "flagged"),
+
+          supabase
+            .from("reports")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .eq("severity", "high")
+            .eq("status", "under_review"),
+
+          supabase
+            .from("property_verifications")
+            .select(`
+              id,
+              property_id,
+              status,
+              document_count,
+              created_at,
+              properties (
+                id,
+                title,
+                location
+              )
+            `)
+            .order("created_at", {
+              ascending: false,
+            })
+            .limit(5),
+        ]);
+
+        const results = [
+          usersResult,
+          agentsResult,
+          propertiesResult,
+          verifiedPropertiesResult,
+          pendingVerificationsResult,
+          reportsResult,
+          reportsReviewResult,
+          viewingRequestsResult,
+          pendingViewingRequestsResult,
+          flaggedPropertiesResult,
+          highSeverityReportsResult,
+          recentVerificationResult,
+        ];
+
+        const failedResult = results.find(
+          (result) => result.error
+        );
+
+        if (failedResult) {
+          throw failedResult.error;
+        }
+
+        setStats({
+          users: usersResult.count || 0,
+          agents: agentsResult.count || 0,
+          properties:
+            propertiesResult.count || 0,
+          verifiedProperties:
+            verifiedPropertiesResult.count || 0,
+          pendingVerifications:
+            pendingVerificationsResult.count || 0,
+          reports: reportsResult.count || 0,
+          reportsUnderReview:
+            reportsReviewResult.count || 0,
+          viewingRequests:
+            viewingRequestsResult.count || 0,
+          pendingViewingRequests:
+            pendingViewingRequestsResult.count || 0,
+          flaggedProperties:
+            flaggedPropertiesResult.count || 0,
+          highSeverityReports:
+            highSeverityReportsResult.count || 0,
+        });
+
+        setRecentVerifications(
+          recentVerificationResult.data || []
+        );
+      } catch (error) {
+        console.error(
+          "Error loading admin dashboard:",
+          error
+        );
+
+        setErrorMessage(
+          error.message ||
+            "Unable to load dashboard statistics."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboard();
+  }, []);
+
+  if (loading) {
     return (
-        <main className="min-h-screen bg-[#FAF8F9] px-5 py-10 sm:px-8 sm:py-12 lg:px-10 lg:py-14">
-            <div className="mx-auto w-full max-w-7xl">
+      <main className="flex min-h-screen items-center justify-center bg-[#FAF8F9] px-5">
+        <div className="text-center">
+          <Loader2
+            size={34}
+            className="mx-auto animate-spin text-[#7A1F3D]"
+          />
 
-                {/* Header */}
-                <section>
-                    <span className="inline-flex items-center gap-2 rounded-full bg-[#F8EDEF] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[#7A1F3D]">
-                        <ShieldCheck size={15} />
-                        Admin Dashboard
-                    </span>
+          <p className="mt-4 text-sm font-medium text-[#756970]">
+            Loading administrator dashboard...
+          </p>
+        </div>
+      </main>
+    );
+  }
 
-                    <h1 className="mt-5 text-3xl font-bold tracking-tight text-[#24171C] sm:text-4xl">
-                        RentSure administration
-                    </h1>
+  return (
+    <main className="min-h-screen bg-[#FAF8F9]">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+        <header className="mb-8">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#F8EDEF] px-3 py-1.5 text-xs font-bold text-[#7A1F3D]">
+            <ShieldCheck size={14} />
+            Administrator Dashboard
+          </div>
 
-                    <p className="mt-4 max-w-3xl text-sm leading-7 text-[#756970] sm:text-base">
-                        Monitor the RentSure platform, review verification requests,
-                        manage users and properties, and respond to reported concerns.
-                    </p>
-                </section>
+          <h1 className="text-2xl font-bold text-[#24171C] sm:text-3xl">
+            RentSure Overview
+          </h1>
 
-                {/* Overview */}
-                <section className="mt-12">
-                    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-                        {overviewCards.map((card) => {
-                            const Icon = card.icon;
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756970]">
+            Monitor users, properties, verification,
+            reports, and viewing activity.
+          </p>
+        </header>
 
-                            return (
-                                <div
-                                    key={card.title}
-                                    className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm"
-                                >
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#F8EDEF]">
-                                            <Icon size={21} className="text-[#7A1F3D]" />
-                                        </div>
+        {errorMessage && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            {errorMessage}
+          </div>
+        )}
 
-                                        <span className="text-2xl font-bold text-[#24171C]">
-                                            {card.value}
-                                        </span>
-                                    </div>
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DashboardCard
+            label="Users"
+            value={stats.users}
+            icon={<Users size={20} />}
+            href="/admin/users"
+          />
 
-                                    <h2 className="mt-5 text-sm font-bold text-[#24171C]">
-                                        {card.title}
-                                    </h2>
+          <DashboardCard
+            label="Agents"
+            value={stats.agents}
+            icon={<UserRound size={20} />}
+            href="/admin/agents"
+          />
 
-                                    <p className="mt-2 text-sm leading-6 text-[#756970]">
-                                        {card.description}
-                                    </p>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </section>
+          <DashboardCard
+            label="Properties"
+            value={stats.properties}
+            icon={<Building2 size={20} />}
+            href="/admin/properties"
+          />
 
-                {/* Management */}
-                <section className="mt-12">
-                    <div>
-                        <h2 className="text-2xl font-bold text-[#24171C]">
-                            Platform management
-                        </h2>
+          <DashboardCard
+            label="Verified Properties"
+            value={stats.verifiedProperties}
+            icon={<ShieldCheck size={20} />}
+            href="/admin/properties"
+          />
 
-                        <p className="mt-2 text-sm leading-6 text-[#756970]">
-                            Access the main areas that require administrative oversight.
-                        </p>
-                    </div>
+          <DashboardCard
+            label="Pending Verifications"
+            value={stats.pendingVerifications}
+            icon={<ShieldCheck size={20} />}
+            href="/admin/verification"
+          />
 
-                    <div className="mt-7 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                        {/* Users */}
-                        <Link
-                            to="/admin/users"
-                            className="group rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-[#7A1F3D] hover:shadow-md sm:p-7"
-                        >
-                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#F8EDEF]">
-                                <Users size={22} className="text-[#7A1F3D]" />
-                            </div>
+          <DashboardCard
+            label="Reports"
+            value={stats.reports}
+            icon={<FileWarning size={20} />}
+            href="/admin/reports"
+          />
 
-                            <h3 className="mt-6 text-lg font-bold text-[#24171C]">
-                                Manage Users
-                            </h3>
+          <DashboardCard
+            label="Reports Under Review"
+            value={stats.reportsUnderReview}
+            icon={<AlertTriangle size={20} />}
+            href="/admin/reports"
+          />
 
-                            <p className="mt-3 text-sm leading-6 text-[#756970]">
-                                Review registered renters and agents and monitor account
-                                information.
-                            </p>
+          <DashboardCard
+            label="Viewing Requests"
+            value={stats.viewingRequests}
+            icon={<CalendarDays size={20} />}
+            href="/admin/viewing-requests"
+          />
+        </section>
 
-                            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#7A1F3D]">
-                                View Users
-                                <ArrowRight
-                                    size={16}
-                                    className="transition group-hover:translate-x-1"
-                                />
-                            </span>
-                        </Link>
+        <section className="mt-8 grid gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-[#E8DDE1] bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-bold text-[#24171C]">
+                  Needs Attention
+                </h2>
 
-                        {/* Properties */}
-                        <Link
-                            to="/admin/properties"
-                            className="group rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-[#7A1F3D] hover:shadow-md sm:p-7"
-                        >
-                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#F8EDEF]">
-                                <Building2 size={22} className="text-[#7A1F3D]" />
-                            </div>
+                <p className="mt-1 text-sm text-[#756970]">
+                  Items requiring administrator review.
+                </p>
+              </div>
 
-                            <h3 className="mt-6 text-lg font-bold text-[#24171C]">
-                                Manage Properties
-                            </h3>
-
-                            <p className="mt-3 text-sm leading-6 text-[#756970]">
-                                Review property listings, verification states, and listing
-                                activity.
-                            </p>
-
-                            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#7A1F3D]">
-                                View Properties
-                                <ArrowRight
-                                    size={16}
-                                    className="transition group-hover:translate-x-1"
-                                />
-                            </span>
-                        </Link>
-
-                        {/* Agents */}
-                        <Link
-                            to="/admin/agents"
-                            className="group rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-[#7A1F3D] hover:shadow-md sm:p-7"
-                        >
-                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#F8EDEF]">
-                                <UserCheck size={22} className="text-[#7A1F3D]" />
-                            </div>
-
-                            <h3 className="mt-6 text-lg font-bold text-[#24171C]">
-                                Manage Agents
-                            </h3>
-
-                            <p className="mt-3 text-sm leading-6 text-[#756970]">
-                                Review agent accounts and monitor their verification status.
-                            </p>
-
-                            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#7A1F3D]">
-                                View Agents
-                                <ArrowRight
-                                    size={16}
-                                    className="transition group-hover:translate-x-1"
-                                />
-                            </span>
-                        </Link>
-
-                        {/* Verification */}
-                        <Link
-                            to="/admin/verification"
-                            className="group rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-[#7A1F3D] hover:shadow-md sm:p-7"
-                        >
-                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#FFF7ED]">
-                                <ShieldCheck size={22} className="text-[#B45309]" />
-                            </div>
-
-                            <h3 className="mt-6 text-lg font-bold text-[#24171C]">
-                                Verification Queue
-                            </h3>
-
-                            <p className="mt-3 text-sm leading-6 text-[#756970]">
-                                Review agents and properties that are waiting for verification.
-                            </p>
-
-                            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#7A1F3D]">
-                                Review Queue
-                                <ArrowRight
-                                    size={16}
-                                    className="transition group-hover:translate-x-1"
-                                />
-                            </span>
-                        </Link>
-
-                        {/* Reports */}
-                        <Link
-                            to="/admin/reports"
-                            className="group rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-[#7A1F3D] hover:shadow-md sm:p-7"
-                        >
-                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#FDECEC]">
-                                <FileWarning size={22} className="text-[#B91C1C]" />
-                            </div>
-
-                            <h3 className="mt-6 text-lg font-bold text-[#24171C]">
-                                Reports
-                            </h3>
-
-                            <p className="mt-3 text-sm leading-6 text-[#756970]">
-                                Review reported properties, agents, and potential rental risks.
-                            </p>
-
-                            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#7A1F3D]">
-                                View Reports
-                                <ArrowRight
-                                    size={16}
-                                    className="transition group-hover:translate-x-1"
-                                />
-                            </span>
-                        </Link>
-                    </div>
-                </section>
-
-                {/* Recent Activity */}
-                <section className="mt-12">
-                    <div>
-                        <h2 className="text-2xl font-bold text-[#24171C]">
-                            Recent activity
-                        </h2>
-
-                        <p className="mt-2 text-sm leading-6 text-[#756970]">
-                            A quick overview of recent activity across the platform.
-                        </p>
-                    </div>
-
-                    <div className="mt-7 rounded-2xl border border-[#E8DDE1] bg-white shadow-sm">
-                        <div className="divide-y divide-[#E8DDE1]">
-                            {activityItems.map((activity) => {
-                                const Icon = activity.icon;
-
-                                return (
-                                    <div
-                                        key={activity.title}
-                                        className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:p-7"
-                                    >
-                                        <div
-                                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${activity.iconWrapper}`}
-                                        >
-                                            <Icon size={20} />
-                                        </div>
-
-                                        <div className="min-w-0 flex-1">
-                                            <h3 className="text-sm font-bold text-[#24171C]">
-                                                {activity.title}
-                                            </h3>
-
-                                            <p className="mt-1 text-sm leading-6 text-[#756970]">
-                                                {activity.description}
-                                            </p>
-                                        </div>
-
-                                        <div className="flex items-center gap-2 text-xs font-medium text-[#756970]">
-                                            <Clock3 size={14} />
-                                            {activity.time}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </section>
-
-                {/* Verification Notice */}
-                <section className="mt-12 rounded-2xl bg-[#2D0A17] p-7 text-white sm:p-9">
-                    <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#4A1025]">
-                            <ShieldCheck size={23} className="text-[#C9A227]" />
-                        </div>
-
-                        <div>
-                            <h2 className="text-lg font-bold">
-                                Administrative review protects platform trust
-                            </h2>
-
-                            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/75">
-                                Verification decisions should be based on the information and
-                                supporting evidence available for review. RentSure verification
-                                is a structured trust mechanism and does not guarantee legal
-                                ownership, property availability, or complete freedom from
-                                fraud.
-                            </p>
-                        </div>
-                    </div>
-                </section>
-
-                {/* Quick Links */}
-                <section className="mt-8 flex flex-col gap-3 sm:flex-row">
-                    <Link
-                        to="/admin/verification"
-                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
-                    >
-                        Review Verification Queue
-                        <ArrowRight size={17} />
-                    </Link>
-
-                    <Link
-                        to="/admin/reports"
-                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-[#E8DDE1] bg-white px-5 py-3 text-sm font-semibold text-[#7A1F3D] transition hover:border-[#7A1F3D] hover:bg-[#F8EDEF]"
-                    >
-                        Review Reports
-                    </Link>
-                </section>
+              <AlertTriangle
+                size={22}
+                className="text-[#B45309]"
+              />
             </div>
-        </main>
+
+            <div className="mt-6 space-y-3">
+              <AttentionItem
+                label="Pending Verifications"
+                value={stats.pendingVerifications}
+                href="/admin/verification"
+              />
+
+              <AttentionItem
+                label="High-Severity Reports"
+                value={stats.highSeverityReports}
+                href="/admin/reports"
+              />
+
+              <AttentionItem
+                label="Flagged Properties"
+                value={stats.flaggedProperties}
+                href="/admin/properties"
+              />
+
+              <AttentionItem
+                label="Pending Viewing Requests"
+                value={stats.pendingViewingRequests}
+                href="/admin/viewing-requests"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[#E8DDE1] bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-bold text-[#24171C]">
+                  Recent Verification Activity
+                </h2>
+
+                <p className="mt-1 text-sm text-[#756970]">
+                  Latest property verification records.
+                </p>
+              </div>
+
+              <Link
+                to="/admin/verification"
+                className="text-sm font-semibold text-[#7A1F3D]"
+              >
+                View All
+              </Link>
+            </div>
+
+            <div className="mt-6 space-y-3">
+              {recentVerifications.length === 0 ? (
+                <p className="rounded-xl bg-[#FAF8F9] p-4 text-sm text-[#756970]">
+                  No verification activity yet.
+                </p>
+              ) : (
+                recentVerifications.map(
+                  (verification) => (
+                    <Link
+                      key={verification.id}
+                      to={`/admin/verification/${verification.id}`}
+                      className="block rounded-xl border border-[#E8DDE1] p-4 transition hover:bg-[#FAF8F9]"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-[#24171C]">
+                            {verification.properties
+                              ?.title ||
+                              `Property #${verification.property_id}`}
+                          </p>
+
+                          <p className="mt-1 text-xs text-[#756970]">
+                            {
+                              verification.properties
+                                ?.location
+                            }
+                          </p>
+                        </div>
+
+                        <span className="shrink-0 rounded-full bg-[#F8EDEF] px-2.5 py-1 text-xs font-bold text-[#7A1F3D]">
+                          {formatStatus(
+                            verification.status
+                          )}
+                        </span>
+                      </div>
+
+                      <p className="mt-3 text-xs text-[#756970]">
+                        {verification.document_count} document
+                        {verification.document_count ===
+                        1
+                          ? ""
+                          : "s"} ·{" "}
+                        {formatDate(
+                          verification.created_at
+                        )}
+                      </p>
+                    </Link>
+                  )
+                )
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl bg-[#2D0A17] p-6 text-white shadow-sm sm:p-8">
+          <h2 className="text-lg font-bold">
+            Administrator Controls
+          </h2>
+
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75">
+            RentSure uses role-based access, Supabase
+            Row Level Security, protected database
+            functions, and verification controls to
+            separate administrative operations from
+            renter and agent actions.
+          </p>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <AdminAction
+              href="/admin/users"
+              label="Manage Users"
+            />
+
+            <AdminAction
+              href="/admin/properties"
+              label="Manage Properties"
+            />
+
+            <AdminAction
+              href="/admin/verification"
+              label="Review Verification"
+            />
+
+            <AdminAction
+              href="/admin/reports"
+              label="Review Reports"
+            />
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function DashboardCard({
+  label,
+  value,
+  icon,
+  href,
+}) {
+  return (
+    <Link
+      to={href}
+      className="rounded-2xl border border-[#E8DDE1] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-[#756970]">
+            {label}
+          </p>
+
+          <p className="mt-2 text-2xl font-bold text-[#24171C]">
+            {value}
+          </p>
+        </div>
+
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#F8EDEF] text-[#7A1F3D]">
+          {icon}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function AttentionItem({
+  label,
+  value,
+  href,
+}) {
+  return (
+    <Link
+      to={href}
+      className="flex items-center justify-between rounded-xl border border-[#E8DDE1] p-4 transition hover:bg-[#FAF8F9]"
+    >
+      <span className="text-sm font-semibold text-[#24171C]">
+        {label}
+      </span>
+
+      <span className="rounded-full bg-[#F8EDEF] px-3 py-1.5 text-xs font-bold text-[#7A1F3D]">
+        {value}
+      </span>
+    </Link>
+  );
+}
+
+function AdminAction({ href, label }) {
+  return (
+    <Link
+      to={href}
+      className="rounded-lg border border-white/20 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/10"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function formatStatus(value) {
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) =>
+      char.toUpperCase()
     );
 }
 
-export default Dashboard;
+function formatDate(value) {
+  if (!value) return "—";
+
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+  }).format(new Date(value));
+}
+
+export default AdminDashboard;
 

@@ -401,15 +401,12 @@ function PropertyCard({ property }) {
                     </Link>
                 </div>
 
-                <button
-                    type="button"
-                    disabled
-                    className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg text-sm font-semibold text-[#756970] opacity-70"
-                    title="Property editing will be connected next"
+                <Link
+                    to={`/agent/properties/${property.id}/edit`}
+                    className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#E8DDE1] px-4 py-2 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF]"
                 >
-                    <Pencil size={15} />
                     Edit Property
-                </button>
+                </Link>
             </div>
         </article>
     );

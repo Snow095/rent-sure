@@ -8,38 +8,12 @@ import {
   ArrowRight,
   Loader2,
   AlertCircle,
-  CheckCircle2,
+  ShieldCheck,
   XCircle,
 } from "lucide-react";
 
 import { useAuth } from "../../../context/AuthContext";
 import { supabase } from "../../../services/supabase/client";
-
-function StatusBadge({ status }) {
-  const styles = {
-    pending: "bg-[#FFF7E6] text-[#B45309]",
-    confirmed: "bg-[#E8F5EC] text-[#15803D]",
-    completed: "bg-[#EEF2FF] text-[#4338CA]",
-    cancelled: "bg-[#FDECEC] text-[#B91C1C]",
-  };
-
-  const labels = {
-    pending: "Pending",
-    confirmed: "Confirmed",
-    completed: "Completed",
-    cancelled: "Cancelled",
-  };
-
-  return (
-    <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-        styles[status] || "bg-[#F3F4F6] text-[#756970]"
-      }`}
-    >
-      {labels[status] || status}
-    </span>
-  );
-}
 
 function ViewingRequests() {
   const { user } = useAuth();
@@ -47,9 +21,10 @@ function ViewingRequests() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [cancellingId, setCancellingId] = useState(null);
 
   useEffect(() => {
-    const fetchViewingRequests = async () => {
+    const loadViewingRequests = async () => {
       if (!user) {
         setLoading(false);
         return;
@@ -58,8 +33,72 @@ function ViewingRequests() {
       setLoading(true);
       setErrorMessage("");
 
+      try {
+        const { data, error } = await supabase
+          .from("viewing_requests")
+          .select(`
+            id,
+            property_id,
+            requested_date,
+            requested_time,
+            status,
+            renter_notes,
+            agent_notes,
+            created_at,
+            properties (
+              id,
+              title,
+              location,
+              property_type,
+              annual_rent,
+              verification_status,
+              property_status
+            )
+          `)
+          .eq("renter_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          throw error;
+        }
+
+        setRequests(data || []);
+      } catch (error) {
+        console.error("Error loading viewing requests:", error);
+
+        setErrorMessage(
+          error.message ||
+            "Unable to load your viewing requests."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadViewingRequests();
+  }, [user]);
+
+  const handleCancel = async (requestId) => {
+    const shouldCancel = window.confirm(
+      "Are you sure you want to cancel this viewing request?"
+    );
+
+    if (!shouldCancel) {
+      return;
+    }
+
+    setCancellingId(requestId);
+    setErrorMessage("");
+
+    try {
       const { data, error } = await supabase
         .from("viewing_requests")
+        .update({
+          status: "cancelled",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", requestId)
+        .eq("renter_id", user.id)
         .select(`
           id,
           property_id,
@@ -67,91 +106,39 @@ function ViewingRequests() {
           requested_time,
           status,
           renter_notes,
+          agent_notes,
           created_at,
           properties (
             id,
             title,
             location,
             property_type,
-            annual_rent
+            annual_rent,
+            verification_status,
+            property_status
           )
         `)
-        .eq("renter_id", user.id)
-        .order("created_at", { ascending: false });
+        .single();
 
       if (error) {
-        console.error("Error fetching viewing requests:", error);
-        setErrorMessage(
-          error.message || "Unable to load your viewing requests."
-        );
-        setRequests([]);
-      } else {
-        setRequests(data || []);
+        throw error;
       }
 
-      setLoading(false);
-    };
-
-    fetchViewingRequests();
-  }, [user]);
-
-  const formatDate = (date) => {
-    if (!date) return "Date unavailable";
-
-    return new Date(`${date}T00:00:00`).toLocaleDateString("en-NG", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  };
-
-  const formatTime = (time) => {
-    if (!time) return "Time unavailable";
-
-    const [hours, minutes] = time.split(":");
-
-    const date = new Date();
-    date.setHours(Number(hours), Number(minutes), 0, 0);
-
-    return date.toLocaleTimeString("en-NG", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
-
-  const handleCancel = async (requestId) => {
-    const shouldCancel = window.confirm(
-      "Are you sure you want to cancel this viewing request?"
-    );
-
-    if (!shouldCancel) return;
-
-    setErrorMessage("");
-
-    const { data, error } = await supabase
-      .from("viewing_requests")
-      .update({ status: "cancelled" })
-      .eq("id", requestId)
-      .eq("renter_id", user.id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error cancelling viewing request:", error);
-      setErrorMessage(
-        error.message || "Unable to cancel the viewing request."
+      setRequests((previous) =>
+        previous.map((request) =>
+          request.id === requestId ? data : request
+        )
       );
-      return;
-    }
+    } catch (error) {
+      console.error("Error cancelling viewing request:", error);
 
-    setRequests((previous) =>
-      previous.map((request) =>
-        request.id === requestId
-          ? { ...request, status: data.status }
-          : request
-      )
-    );
+      setErrorMessage(
+        error.message ||
+          "Unable to cancel this viewing request."
+      );
+    } finally {
+      setCancellingId(null);
+    }
   };
 
   return (
@@ -159,41 +146,47 @@ function ViewingRequests() {
       <div className="mx-auto w-full max-w-6xl">
 
         {/* Header */}
-        <div className="mb-10">
+        <section>
           <Link
             to="/renter/dashboard"
-            className="text-sm font-semibold text-[#7A1F3D] hover:underline"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-[#7A1F3D] hover:text-[#4A1025]"
           >
             ← Back to Dashboard
           </Link>
 
-          <div className="mt-5">
-            <h1 className="text-3xl font-bold tracking-tight text-[#24171C] sm:text-4xl">
+          <div className="mt-7">
+            <p className="text-sm font-semibold text-[#7A1F3D]">
               Viewing Requests
+            </p>
+
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#24171C] sm:text-4xl">
+              My Property Viewings
             </h1>
 
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[#756970] sm:text-base">
-              Keep track of the property viewings you have requested and their
-              current status.
+              Track your property viewing requests and see when agents
+              confirm or update your requested viewing.
             </p>
           </div>
-        </div>
+        </section>
 
         {/* Error */}
         {errorMessage && (
-          <div className="mb-8 flex items-start gap-3 rounded-xl border border-[#F3C7C7] bg-[#FDECEC] p-4 text-sm text-[#B91C1C]">
-            <AlertCircle size={20} className="mt-0.5 shrink-0" />
+          <div className="mt-8 flex gap-3 rounded-xl border border-[#F3C7C7] bg-[#FFF5F5] p-4">
+            <AlertCircle
+              size={20}
+              className="mt-0.5 shrink-0 text-[#B91C1C]"
+            />
 
-            <div>
-              <p className="font-semibold">Something went wrong</p>
-              <p className="mt-1 leading-6">{errorMessage}</p>
-            </div>
+            <p className="text-sm leading-6 text-[#B91C1C]">
+              {errorMessage}
+            </p>
           </div>
         )}
 
         {/* Loading */}
         {loading && (
-          <div className="rounded-2xl border border-[#E8DDE1] bg-white px-6 py-16 text-center shadow-sm">
+          <div className="mt-10 rounded-2xl border border-[#E8DDE1] bg-white p-12 text-center shadow-sm">
             <Loader2
               size={30}
               className="mx-auto animate-spin text-[#7A1F3D]"
@@ -206,24 +199,27 @@ function ViewingRequests() {
         )}
 
         {/* Empty */}
-        {!loading && requests.length === 0 && !errorMessage && (
-          <div className="rounded-2xl border border-[#E8DDE1] bg-white px-6 py-16 text-center shadow-sm">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#F8EDEF]">
-              <CalendarDays size={30} className="text-[#7A1F3D]" />
+        {!loading && requests.length === 0 && (
+          <div className="mt-10 rounded-2xl border border-[#E8DDE1] bg-white p-8 text-center shadow-sm sm:p-12">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#F8EDEF]">
+              <CalendarDays
+                size={27}
+                className="text-[#7A1F3D]"
+              />
             </div>
 
-            <h2 className="mt-6 text-xl font-bold text-[#24171C]">
+            <h2 className="mt-5 text-xl font-bold text-[#24171C]">
               No viewing requests yet
             </h2>
 
             <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#756970]">
-              When you request a property viewing, it will appear here so you
-              can keep track of the request.
+              When you request a property viewing, it will appear here so
+              you can track its status.
             </p>
 
             <Link
               to="/properties"
-              className="mt-7 inline-flex items-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
+              className="mt-7 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
             >
               Explore Properties
               <ArrowRight size={17} />
@@ -233,183 +229,237 @@ function ViewingRequests() {
 
         {/* Requests */}
         {!loading && requests.length > 0 && (
-          <div className="space-y-6">
+          <section className="mt-10 space-y-5">
             {requests.map((request) => {
               const property = request.properties;
 
               return (
                 <article
                   key={request.id}
-                  className="overflow-hidden rounded-2xl border border-[#E8DDE1] bg-white shadow-sm"
+                  className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-7"
                 >
-                  <div className="p-6 sm:p-7 lg:p-8">
+                  <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
 
-                    {/* Top */}
-                    <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <StatusBadge status={request.status} />
+                    {/* Property */}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge status={request.status} />
 
-                          <span className="text-xs font-medium text-[#756970]">
-                            Request #{request.id}
+                        {property?.verification_status === "verified" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F5EC] px-3 py-1 text-xs font-semibold text-[#15803D]">
+                            <ShieldCheck size={14} />
+                            Verified Property
                           </span>
-                        </div>
-
-                        <h2 className="mt-4 text-xl font-bold text-[#24171C] sm:text-2xl">
-                          {property?.title || "Property unavailable"}
-                        </h2>
-
-                        <div className="mt-3 flex items-start gap-2 text-sm text-[#756970]">
-                          <MapPin
-                            size={18}
-                            className="mt-0.5 shrink-0 text-[#7A1F3D]"
-                          />
-
-                          <span>
-                            {property?.location || "Location unavailable"}
-                          </span>
-                        </div>
+                        )}
                       </div>
 
-                      {property && (
-                        <Link
-                          to={`/properties/${property.id}`}
-                          className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-[#7A1F3D] hover:underline"
-                        >
-                          View Property
-                          <ArrowRight size={16} />
-                        </Link>
-                      )}
-                    </div>
+                      <h2 className="mt-4 text-xl font-bold text-[#24171C]">
+                        {property?.title || "Property"}
+                      </h2>
 
-                    {/* Details */}
-                    <div className="mt-7 grid gap-4 border-t border-[#E8DDE1] pt-6 sm:grid-cols-2">
-                      <div className="rounded-xl bg-[#FAF8F9] p-5">
-                        <div className="flex items-center gap-2 text-[#7A1F3D]">
-                          <CalendarDays size={19} />
-                          <span className="text-xs font-semibold uppercase tracking-wide">
-                            Requested Date
-                          </span>
-                        </div>
-
-                        <p className="mt-3 text-sm font-semibold text-[#24171C]">
-                          {formatDate(request.requested_date)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-[#FAF8F9] p-5">
-                        <div className="flex items-center gap-2 text-[#7A1F3D]">
-                          <Clock3 size={19} />
-                          <span className="text-xs font-semibold uppercase tracking-wide">
-                            Requested Time
-                          </span>
-                        </div>
-
-                        <p className="mt-3 text-sm font-semibold text-[#24171C]">
-                          {formatTime(request.requested_time)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Notes */}
-                    {request.renter_notes && (
-                      <div className="mt-6 rounded-xl border border-[#E8DDE1] bg-white p-5">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
-                          Your Notes
-                        </p>
-
-                        <p className="mt-2 text-sm leading-6 text-[#24171C]">
-                          {request.renter_notes}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    {request.status === "pending" && (
-                      <div className="mt-7 flex flex-col gap-3 border-t border-[#E8DDE1] pt-6 sm:flex-row sm:justify-end">
-                        <button
-                          type="button"
-                          onClick={() => handleCancel(request.id)}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#E8DDE1] px-5 py-3 text-sm font-semibold text-[#B91C1C] transition hover:bg-[#FDECEC]"
-                        >
-                          <XCircle size={17} />
-                          Cancel Request
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Status Message */}
-                  <div
-                    className={`border-t px-6 py-4 sm:px-7 ${
-                      request.status === "confirmed"
-                        ? "border-[#CBE7D2] bg-[#E8F5EC]"
-                        : request.status === "cancelled"
-                          ? "border-[#F3C7C7] bg-[#FDECEC]"
-                          : "border-[#E8DDE1] bg-[#FAF8F9]"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      {request.status === "confirmed" ? (
-                        <CheckCircle2
-                          size={19}
-                          className="mt-0.5 shrink-0 text-[#15803D]"
-                        />
-                      ) : request.status === "cancelled" ? (
-                        <XCircle
-                          size={19}
-                          className="mt-0.5 shrink-0 text-[#B91C1C]"
-                        />
-                      ) : (
-                        <CalendarDays
-                          size={19}
+                      <div className="mt-3 flex items-start gap-2 text-sm text-[#756970]">
+                        <MapPin
+                          size={17}
                           className="mt-0.5 shrink-0 text-[#7A1F3D]"
                         />
-                      )}
 
-                      <p className="text-sm leading-6 text-[#756970]">
-                        {request.status === "confirmed"
-                          ? "Your viewing request has been confirmed. Please follow any instructions provided by the agent."
-                          : request.status === "completed"
-                            ? "This viewing request has been marked as completed."
-                            : request.status === "cancelled"
-                              ? "This viewing request has been cancelled."
-                              : "Your request has been submitted and is waiting for the agent's response."}
+                        <span>
+                          {property?.location || "Location unavailable"}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 text-sm text-[#756970]">
+                        {property?.property_type || "Property"}
+                        {property?.annual_rent
+                          ? ` • ₦${Number(
+                              property.annual_rent
+                            ).toLocaleString()}/year`
+                          : ""}
+                      </div>
+                    </div>
+
+                    {/* Requested Date */}
+                    <div className="rounded-xl bg-[#FAF8F9] p-5 lg:min-w-[230px]">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                        Requested Viewing
+                      </p>
+
+                      <div className="mt-3 flex items-center gap-2">
+                        <CalendarDays
+                          size={18}
+                          className="text-[#7A1F3D]"
+                        />
+
+                        <span className="text-sm font-semibold text-[#24171C]">
+                          {formatDate(request.requested_date)}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-2">
+                        <Clock3
+                          size={18}
+                          className="text-[#7A1F3D]"
+                        />
+
+                        <span className="text-sm font-semibold text-[#24171C]">
+                          {formatTime(request.requested_time)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  {request.renter_notes && (
+                    <div className="mt-6 rounded-xl border border-[#E8DDE1] bg-[#FAF8F9] p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+                        Your Note
+                      </p>
+
+                      <p className="mt-2 text-sm leading-6 text-[#24171C]">
+                        {request.renter_notes}
                       </p>
                     </div>
+                  )}
+
+                  {/* Agent Notes */}
+                  {request.agent_notes && (
+                    <div className="mt-4 rounded-xl bg-[#F8EDEF] p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[#4A1025]">
+                        Agent Note
+                      </p>
+
+                      <p className="mt-2 text-sm leading-6 text-[#24171C]">
+                        {request.agent_notes}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="mt-6 flex flex-col gap-3 border-t border-[#E8DDE1] pt-6 sm:flex-row sm:items-center sm:justify-between">
+                    <Link
+                      to={`/properties/${request.property_id}`}
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#E8DDE1] px-4 py-3 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF]"
+                    >
+                      View Property
+                      <ArrowRight size={16} />
+                    </Link>
+
+                    {request.status === "pending" && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancel(request.id)}
+                        disabled={cancellingId === request.id}
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#F3C7C7] px-4 py-3 text-sm font-semibold text-[#B91C1C] transition hover:bg-[#FFF5F5] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {cancellingId === request.id ? (
+                          <>
+                            <Loader2
+                              size={17}
+                              className="animate-spin"
+                            />
+                            Cancelling...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle size={17} />
+                            Cancel Request
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </article>
               );
             })}
-          </div>
+          </section>
         )}
 
         {/* Safety Notice */}
-        <div className="mt-10 rounded-2xl border border-[#E8DDE1] bg-white p-6 sm:p-7">
-          <div className="flex items-start gap-3">
-            <AlertCircle
-              size={21}
-              className="mt-0.5 shrink-0 text-[#7A1F3D]"
-            />
+        <section className="mt-10 rounded-2xl border border-[#E8DDE1] bg-white p-6">
+          <div className="flex gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F8EDEF]">
+              <ShieldCheck
+                size={20}
+                className="text-[#7A1F3D]"
+              />
+            </div>
 
             <div>
-              <h3 className="text-sm font-bold text-[#24171C]">
+              <h2 className="text-sm font-bold text-[#24171C]">
                 Stay safe during property viewings
-              </h3>
+              </h2>
 
               <p className="mt-2 text-sm leading-6 text-[#756970]">
-                Avoid making payments simply because a viewing has been
-                scheduled. Continue reviewing the property's verification
-                status and use RentSure's reporting tools if anything appears
-                suspicious.
+                Confirm viewing details through RentSure and avoid sending
+                deposits or other payments simply because a viewing has been
+                requested or confirmed.
               </p>
             </div>
           </div>
-        </div>
+        </section>
 
       </div>
     </main>
   );
 }
 
+function StatusBadge({ status }) {
+  const styles = {
+    pending: "bg-[#FFF7E6] text-[#B45309]",
+    confirmed: "bg-[#E8F5EC] text-[#15803D]",
+    completed: "bg-[#EEF2F7] text-[#475569]",
+    cancelled: "bg-[#FFF5F5] text-[#B91C1C]",
+  };
+
+  const labels = {
+    pending: "Pending",
+    confirmed: "Confirmed",
+    completed: "Completed",
+    cancelled: "Cancelled",
+  };
+
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+        styles[status] || "bg-[#EEF2F7] text-[#475569]"
+      }`}
+    >
+      {labels[status] || status}
+    </span>
+  );
+}
+
+function formatDate(date) {
+  if (!date) {
+    return "Date unavailable";
+  }
+
+  return new Date(`${date}T00:00:00`).toLocaleDateString(
+    "en-NG",
+    {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  );
+}
+
+function formatTime(time) {
+  if (!time) {
+    return "Time unavailable";
+  }
+
+  const [hours, minutes] = time.split(":");
+  const date = new Date();
+
+  date.setHours(Number(hours), Number(minutes), 0, 0);
+
+  return date.toLocaleTimeString("en-NG", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default ViewingRequests;
+

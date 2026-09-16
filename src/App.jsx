@@ -13,6 +13,10 @@ import Login from "./pages/Login/Login";
 import Register from "./pages/Register/Register";
 import ConfirmEmail from "./pages/ConfirmEmail/ConfirmEmail";
 
+import Agents from "./pages/Agents/Agents";
+import AgentProfile from "./pages/AgentProfile/AgentProfile";
+import About from "./pages/About/About";
+
 // Renter pages
 import Dashboard from "./pages/renter/Dashboard/Dashboard";
 import SavedProperties from "./pages/renter/SavedProperties/SavedProperties";
@@ -26,6 +30,7 @@ import AgentProperties from "./pages/agent/Properties/Properties";
 import AddProperty from "./pages/agent/AddProperty/AddProperty";
 import AgentVerification from "./pages/agent/Verification/Verification";
 import AgentReports from "./pages/agent/Reports/Reports";
+import EditProperty from "./pages/agent/EditProperty/EditProperty";
 
 
 // Admin pages
@@ -37,6 +42,8 @@ import AdminVerification from "./pages/admin/Verification/Verification";
 import VerificationDetails from "./pages/agent/Verification/VerificationDetails";
 import VerificationReview from "./pages/admin/Verification/VerificationReview";
 import AgentViewingRequests from "./pages/agent/ViewingRequests/ViewingRequest";
+import Reports from "./pages/admin/Reports/Reports";
+import AdminViewingRequests from "./pages/admin/ViewingRequests/ViewingRequests";
 
 
 function App() {
@@ -60,6 +67,14 @@ function App() {
           path="/properties/:id"
           element={<PropertyDetails />}
         />
+        <Route path="/agents" element={<Agents />} />
+
+        <Route
+          path="/agents/:agentId"
+          element={<AgentProfile />}
+        />
+
+        <Route path="/about" element={<About />} />
 
         <Route
           path="/login"
@@ -129,6 +144,10 @@ function App() {
             element={< VerificationDetails />}
           />
           <Route
+            path="/agent/properties/:id/edit"
+            element={<EditProperty />}
+          />
+          <Route
             path="/agent/verification/:propertyId"
             element={<AgentVerification />}
           />
@@ -139,7 +158,7 @@ function App() {
           />
           <Route
             path="/agent/viewing-requests"
-            element={<AgentViewingRequests/>}
+            element={<AgentViewingRequests />}
           />
 
         </Route>
@@ -175,6 +194,11 @@ function App() {
           <Route
             path="/admin/verification/:verificationId"
             element={<VerificationReview />}
+          />
+          <Route path="/admin/reports" element={<Reports />} />
+          <Route
+            path="/admin/viewing-requests"
+            element={<AdminViewingRequests />}
           />
 
         </Route>
