@@ -1,18 +1,21 @@
 
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ShieldCheck,
   Mail,
   Lock,
   ArrowRight,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../services/supabase/client";
 
 function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+
   const { signIn } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -23,6 +26,21 @@ function Login() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  const resetMessage = location.state?.message ?? "";
+
+  useEffect(() => {
+    if (location.state?.message) {
+      const timer = setTimeout(() => {
+        navigate(location.pathname, {
+          replace: true,
+          state: {},
+        });
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [location, navigate]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -52,49 +70,63 @@ function Login() {
 
     setLoading(true);
 
-    const { data, error } = await signIn({
-      email: formData.email.trim(),
-      password: formData.password,
-    });
+    try {
+      const { data, error } = await signIn({
+        email: formData.email.trim(),
+        password: formData.password,
+      });
 
-    if (error) {
+      if (error) {
+        setLoading(false);
+        setErrorMessage(error.message);
+        return;
+      }
+
+      const user = data?.user;
+
+      if (!user) {
+        setLoading(false);
+        setErrorMessage(
+          "Unable to retrieve your account information."
+        );
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
       setLoading(false);
-      setErrorMessage(error.message);
-      return;
-    }
 
-    const user = data?.user;
+      if (profileError) {
+        console.error(
+          "Error loading user profile:",
+          profileError
+        );
 
-    if (!user) {
+        setErrorMessage(
+          "Your account was authenticated, but your profile could not be loaded."
+        );
+
+        return;
+      }
+
+      if (profile?.role === "admin") {
+        navigate("/admin/dashboard");
+      } else if (profile?.role === "agent") {
+        navigate("/agent/dashboard");
+      } else {
+        navigate("/renter/dashboard");
+      }
+    } catch (error) {
+      console.error("Unexpected login error:", error);
+
       setLoading(false);
-      setErrorMessage("Unable to retrieve your account information.");
-      return;
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    setLoading(false);
-
-    if (profileError) {
-      console.error("Error loading user profile:", profileError);
-
       setErrorMessage(
-        "Your account was authenticated, but your profile could not be loaded."
+        "Something went wrong while signing you in. Please try again."
       );
-
-      return;
-    }
-
-    if (profile?.role === "admin") {
-      navigate("/admin/dashboard");
-    } else if (profile?.role === "agent") {
-      navigate("/agent/dashboard");
-    } else {
-      navigate("/renter/dashboard");
     }
   };
 
@@ -125,6 +157,7 @@ function Login() {
 
             <div className="mt-10 space-y-5">
 
+              {/* STEP 1 */}
               <div className="flex items-start gap-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8EDEF] text-sm font-bold text-[#7A1F3D]">
                   1
@@ -142,6 +175,7 @@ function Login() {
                 </div>
               </div>
 
+              {/* STEP 2 */}
               <div className="flex items-start gap-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8EDEF] text-sm font-bold text-[#7A1F3D]">
                   2
@@ -159,6 +193,7 @@ function Login() {
                 </div>
               </div>
 
+              {/* STEP 3 */}
               <div className="flex items-start gap-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8EDEF] text-sm font-bold text-[#7A1F3D]">
                   3
@@ -201,6 +236,7 @@ function Login() {
           {/* CARD */}
           <div className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-8">
 
+            {/* DESKTOP HEADER */}
             <div className="hidden lg:block">
               <h2 className="text-2xl font-bold text-[#24171C]">
                 Welcome back
@@ -211,9 +247,26 @@ function Login() {
               </p>
             </div>
 
+            {/* PASSWORD RESET SUCCESS MESSAGE */}
+            {resetMessage && (
+              <div
+                role="status"
+                className="mt-6 flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4"
+              >
+                <CheckCircle2
+                  size={19}
+                  className="mt-0.5 shrink-0 text-[#15803D]"
+                />
+
+                <p className="text-sm leading-5 text-[#15803D]">
+                  {resetMessage}
+                </p>
+              </div>
+            )}
+
             <form
               onSubmit={handleSubmit}
-              className="mt-7 space-y-5"
+              className={`${resetMessage ? "mt-5" : "mt-7"} space-y-5`}
             >
 
               {/* EMAIL */}
@@ -239,7 +292,8 @@ function Login() {
                     onChange={handleChange}
                     placeholder="you@example.com"
                     autoComplete="email"
-                    className="h-12 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 pl-11 text-sm text-[#24171C] outline-none transition placeholder:text-[#A39A9F] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
+                    disabled={loading}
+                    className="h-12 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 pl-11 text-sm text-[#24171C] outline-none transition placeholder:text-[#A39A9F] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF] disabled:cursor-not-allowed disabled:bg-[#FAF8F9]"
                   />
                 </div>
               </div>
@@ -254,17 +308,12 @@ function Login() {
                     Password
                   </label>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setErrorMessage(
-                        "Password recovery will be added in the next authentication step."
-                      )
-                    }
-                    className="text-xs font-semibold text-[#7A1F3D] transition hover:text-[#4A1025]"
+                  <Link
+                    to="/forgot-password"
+                    className="text-sm font-semibold text-[#7A1F3D] transition hover:text-[#4A1025]"
                   >
                     Forgot password?
-                  </button>
+                  </Link>
                 </div>
 
                 <div className="relative">
@@ -281,7 +330,8 @@ function Login() {
                     onChange={handleChange}
                     placeholder="Enter your password"
                     autoComplete="current-password"
-                    className="h-12 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 pl-11 text-sm text-[#24171C] outline-none transition placeholder:text-[#A39A9F] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
+                    disabled={loading}
+                    className="h-12 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 pl-11 text-sm text-[#24171C] outline-none transition placeholder:text-[#A39A9F] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF] disabled:cursor-not-allowed disabled:bg-[#FAF8F9]"
                   />
                 </div>
               </div>
@@ -295,6 +345,7 @@ function Login() {
                   onChange={(event) =>
                     setRememberMe(event.target.checked)
                   }
+                  disabled={loading}
                   className="h-4 w-4 rounded border-[#E8DDE1] accent-[#7A1F3D]"
                 />
 
@@ -308,7 +359,10 @@ function Login() {
 
               {/* ERROR */}
               {errorMessage && (
-                <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+                <div
+                  role="alert"
+                  className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4"
+                >
                   <AlertCircle
                     size={18}
                     className="mt-0.5 shrink-0 text-[#B91C1C]"
@@ -326,9 +380,14 @@ function Login() {
                 disabled={loading}
                 className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#4A1025] focus:outline-none focus:ring-2 focus:ring-[#7A1F3D] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "Signing In..." : "Sign In"}
-
-                {!loading && <ArrowRight size={17} />}
+                {loading ? (
+                  "Signing In..."
+                ) : (
+                  <>
+                    Sign In
+                    <ArrowRight size={17} />
+                  </>
+                )}
               </button>
 
             </form>
@@ -348,6 +407,7 @@ function Login() {
 
           </div>
 
+          {/* FOOTER NOTICE */}
           <p className="mt-6 text-center text-xs leading-5 text-[#756970]">
             By signing in, you agree to use RentSure responsibly.
             Verification information is provided for rental decision

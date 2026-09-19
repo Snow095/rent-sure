@@ -1,93 +1,42 @@
 
-import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { ShieldCheck, Loader2 } from "lucide-react";
-
-import { supabase } from "../../services/supabase/client";
 import { useAuth } from "../../context/AuthContext";
 
 function AdminRoute() {
-  const { user, loading: authLoading } = useAuth();
+  const {
+    user,
+    role,
+    loading: authLoading,
+  } = useAuth();
+
   const location = useLocation();
 
-  const [checkingRole, setCheckingRole] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    const checkAdminRole = async () => {
-      if (!user) {
-        setIsAdmin(false);
-        setCheckingRole(false);
-        return;
-      }
-
-      setCheckingRole(true);
-
-      try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single();
-
-        if (error) {
-          console.error(
-            "Error checking admin role:",
-            error
-          );
-
-          setIsAdmin(false);
-          return;
-        }
-
-        setIsAdmin(data?.role === "admin");
-      } catch (error) {
-        console.error(
-          "Unexpected error checking admin role:",
-          error
-        );
-
-        setIsAdmin(false);
-      } finally {
-        setCheckingRole(false);
-      }
-    };
-
-    if (!authLoading) {
-      checkAdminRole();
-    }
-  }, [user, authLoading]);
-
-  if (authLoading || checkingRole) {
+  if (authLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#FAF8F9] px-5">
-        <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#F8EDEF]">
-            <Loader2
-              size={27}
-              className="animate-spin text-[#7A1F3D]"
-            />
+      <div className="flex min-h-screen items-center justify-center bg-[#FAF8F9] px-5">
+        <div className="w-full max-w-sm text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#F8EDEF]">
+            <div className="h-6 w-6 animate-spin rounded-full border-4 border-[#E8DDE1] border-t-[#7A1F3D]" />
           </div>
 
-          <div className="mt-5 flex items-center justify-center gap-2">
-            <ShieldCheck
-              size={18}
-              className="text-[#7A1F3D]"
-            />
+          <h2 className="mt-5 text-lg font-bold text-[#24171C]">
+            Checking administrator access...
+          </h2>
 
-            <p className="text-sm font-semibold text-[#24171C]">
-              Checking administrator access...
-            </p>
-          </div>
-
-          <p className="mt-2 text-xs text-[#756970]">
-            Please wait while RentSure verifies your account.
+          <p className="mt-2 text-sm leading-6 text-[#756970]">
+            Please wait while we verify your account permissions.
           </p>
         </div>
-      </main>
+      </div>
     );
   }
 
+  /*
+   * User is not authenticated.
+   *
+   * Send them to Login and preserve the page they originally
+   * attempted to access.
+   */
   if (!user) {
     return (
       <Navigate
@@ -98,10 +47,26 @@ function AdminRoute() {
     );
   }
 
-  if (!isAdmin) {
-    return <Navigate to="/" replace />;
+  /*
+   * User is authenticated but does not have the admin role.
+   *
+   * They are redirected to the public home page instead of
+   * allowing access to admin pages.
+   */
+  if (role !== "admin") {
+    return (
+      <Navigate
+        to="/"
+        replace
+      />
+    );
   }
 
+  /*
+   * Authenticated administrator.
+   *
+   * Render the nested admin route.
+   */
   return <Outlet />;
 }
 
