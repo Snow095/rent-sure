@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -6,7 +5,6 @@ import {
   BedDouble,
   Building2,
   ChevronDown,
-  Filter,
   Loader2,
   MapPin,
   Search,
@@ -111,7 +109,6 @@ function VerificationBadge({ status }) {
 function PropertyCard({ property }) {
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[#E8DDE1] bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      {/* Property visual */}
       <div className="flex h-48 items-center justify-center bg-[#F8EDEF]">
         <Building2
           size={62}
@@ -149,17 +146,23 @@ function PropertyCard({ property }) {
         <div className="mt-5 grid grid-cols-2 gap-3">
           <div className="flex items-center gap-2 text-sm text-[#756970]">
             <BedDouble size={17} />
+
             <span>
               {property.bedrooms}{" "}
-              {property.bedrooms === 1 ? "Bedroom" : "Bedrooms"}
+              {property.bedrooms === 1
+                ? "Bedroom"
+                : "Bedrooms"}
             </span>
           </div>
 
           <div className="flex items-center gap-2 text-sm text-[#756970]">
             <Bath size={17} />
+
             <span>
               {property.bathrooms}{" "}
-              {property.bathrooms === 1 ? "Bathroom" : "Bathrooms"}
+              {property.bathrooms === 1
+                ? "Bathroom"
+                : "Bathrooms"}
             </span>
           </div>
         </div>
@@ -216,10 +219,9 @@ function Properties() {
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    const fetchProperties = async () => {
-      setLoading(true);
-      setErrorMessage("");
+    let cancelled = false;
 
+    const fetchProperties = async () => {
       const { data, error } = await supabase
         .from("properties")
         .select(`
@@ -239,6 +241,10 @@ function Properties() {
           ascending: false,
         });
 
+      if (cancelled) {
+        return;
+      }
+
       if (error) {
         console.error(
           "Error loading properties:",
@@ -248,17 +254,22 @@ function Properties() {
         setErrorMessage(
           "We couldn't load the available properties. Please try again."
         );
-
         setProperties([]);
         setLoading(false);
+
         return;
       }
 
       setProperties(data ?? []);
+      setErrorMessage("");
       setLoading(false);
     };
 
     fetchProperties();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredProperties = useMemo(() => {
@@ -374,35 +385,50 @@ function Properties() {
     sortBy,
   ]);
 
-  useEffect(() => {
+  const handleSearchChange = (event) => {
+    setSearchTerm(event.target.value);
     setVisibleCount(PAGE_SIZE);
-  }, [
-    searchTerm,
-    location,
-    propertyType,
-    verificationStatus,
-    minRent,
-    maxRent,
-    minBedrooms,
-    minBathrooms,
-    sortBy,
-  ]);
+  };
 
-  const visibleProperties =
-    filteredProperties.slice(0, visibleCount);
+  const handleLocationChange = (event) => {
+    setLocation(event.target.value);
+    setVisibleCount(PAGE_SIZE);
+  };
 
-  const hasMore =
-    visibleCount < filteredProperties.length;
+  const handlePropertyTypeChange = (event) => {
+    setPropertyType(event.target.value);
+    setVisibleCount(PAGE_SIZE);
+  };
 
-  const activeFilterCount = [
-    location.trim(),
-    propertyType !== "All Types",
-    verificationStatus !== "all",
-    minRent,
-    maxRent,
-    minBedrooms,
-    minBathrooms,
-  ].filter(Boolean).length;
+  const handleVerificationChange = (event) => {
+    setVerificationStatus(event.target.value);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const handleMinRentChange = (event) => {
+    setMinRent(event.target.value);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const handleMaxRentChange = (event) => {
+    setMaxRent(event.target.value);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const handleMinBedroomsChange = (event) => {
+    setMinBedrooms(event.target.value);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const handleMinBathroomsChange = (event) => {
+    setMinBathrooms(event.target.value);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const handleSortChange = (event) => {
+    setSortBy(event.target.value);
+    setVisibleCount(PAGE_SIZE);
+  };
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -414,9 +440,12 @@ function Properties() {
     setMinBedrooms("");
     setMinBathrooms("");
     setSortBy("newest");
+    setVisibleCount(PAGE_SIZE);
   };
 
   const removeFilter = (filterName) => {
+    setVisibleCount(PAGE_SIZE);
+
     if (filterName === "location") {
       setLocation("");
     }
@@ -446,9 +475,24 @@ function Properties() {
     }
   };
 
+  const visibleProperties =
+    filteredProperties.slice(0, visibleCount);
+
+  const hasMore =
+    visibleCount < filteredProperties.length;
+
+  const activeFilterCount = [
+    location.trim(),
+    propertyType !== "All Types",
+    verificationStatus !== "all",
+    minRent,
+    maxRent,
+    minBedrooms,
+    minBathrooms,
+  ].filter(Boolean).length;
+
   return (
     <main className="min-h-screen bg-[#FAF8F9]">
-      {/* Page Header */}
       <section className="border-b border-[#E8DDE1] bg-white">
         <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-10 lg:py-14">
           <div className="max-w-3xl">
@@ -462,19 +506,17 @@ function Properties() {
             </h1>
 
             <p className="mt-4 text-sm leading-7 text-[#756970] sm:text-base">
-              Search rental properties, compare important details
-              and review verification indicators before making a
-              decision.
+              Search rental properties, compare important
+              details and review verification indicators before
+              making a decision.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Search */}
       <section className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
         <div className="rounded-2xl border border-[#E8DDE1] bg-white p-5 shadow-sm sm:p-6">
           <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]">
-            {/* Search */}
             <div>
               <label
                 htmlFor="property-search"
@@ -493,16 +535,13 @@ function Properties() {
                   id="property-search"
                   type="search"
                   value={searchTerm}
-                  onChange={(event) =>
-                    setSearchTerm(event.target.value)
-                  }
+                  onChange={handleSearchChange}
                   placeholder="Search property or area..."
                   className="min-h-12 w-full rounded-lg border border-[#E8DDE1] bg-white pl-11 pr-4 text-sm text-[#24171C] outline-none transition placeholder:text-[#9B8F94] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                 />
               </div>
             </div>
 
-            {/* Location */}
             <div>
               <label
                 htmlFor="location-search"
@@ -521,16 +560,13 @@ function Properties() {
                   id="location-search"
                   type="text"
                   value={location}
-                  onChange={(event) =>
-                    setLocation(event.target.value)
-                  }
+                  onChange={handleLocationChange}
                   placeholder="e.g. Lekki, Yaba, GRA..."
                   className="min-h-12 w-full rounded-lg border border-[#E8DDE1] bg-white pl-11 pr-4 text-sm text-[#24171C] outline-none transition placeholder:text-[#9B8F94] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                 />
               </div>
             </div>
 
-            {/* Filters */}
             <div className="flex items-end">
               <button
                 type="button"
@@ -555,11 +591,9 @@ function Properties() {
             </div>
           </div>
 
-          {/* More Filters */}
           {showFilters && (
             <div className="mt-6 border-t border-[#E8DDE1] pt-6">
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                {/* Property Type */}
                 <div>
                   <label
                     htmlFor="property-type"
@@ -571,9 +605,7 @@ function Properties() {
                   <select
                     id="property-type"
                     value={propertyType}
-                    onChange={(event) =>
-                      setPropertyType(event.target.value)
-                    }
+                    onChange={handlePropertyTypeChange}
                     className="mt-2 min-h-11 w-full rounded-lg border border-[#E8DDE1] bg-white px-3 text-sm text-[#24171C] outline-none focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                   >
                     {propertyTypes.map((type) => (
@@ -584,7 +616,6 @@ function Properties() {
                   </select>
                 </div>
 
-                {/* Verification */}
                 <div>
                   <label
                     htmlFor="verification-status"
@@ -596,11 +627,7 @@ function Properties() {
                   <select
                     id="verification-status"
                     value={verificationStatus}
-                    onChange={(event) =>
-                      setVerificationStatus(
-                        event.target.value
-                      )
-                    }
+                    onChange={handleVerificationChange}
                     className="mt-2 min-h-11 w-full rounded-lg border border-[#E8DDE1] bg-white px-3 text-sm text-[#24171C] outline-none focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                   >
                     {verificationOptions.map((option) => (
@@ -614,7 +641,6 @@ function Properties() {
                   </select>
                 </div>
 
-                {/* Bedrooms */}
                 <div>
                   <label
                     htmlFor="minimum-bedrooms"
@@ -626,9 +652,7 @@ function Properties() {
                   <select
                     id="minimum-bedrooms"
                     value={minBedrooms}
-                    onChange={(event) =>
-                      setMinBedrooms(event.target.value)
-                    }
+                    onChange={handleMinBedroomsChange}
                     className="mt-2 min-h-11 w-full rounded-lg border border-[#E8DDE1] bg-white px-3 text-sm text-[#24171C] outline-none focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                   >
                     <option value="">Any</option>
@@ -640,7 +664,6 @@ function Properties() {
                   </select>
                 </div>
 
-                {/* Bathrooms */}
                 <div>
                   <label
                     htmlFor="minimum-bathrooms"
@@ -652,9 +675,7 @@ function Properties() {
                   <select
                     id="minimum-bathrooms"
                     value={minBathrooms}
-                    onChange={(event) =>
-                      setMinBathrooms(event.target.value)
-                    }
+                    onChange={handleMinBathroomsChange}
                     className="mt-2 min-h-11 w-full rounded-lg border border-[#E8DDE1] bg-white px-3 text-sm text-[#24171C] outline-none focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                   >
                     <option value="">Any</option>
@@ -667,7 +688,6 @@ function Properties() {
                 </div>
               </div>
 
-              {/* Price */}
               <div className="mt-5">
                 <p className="text-sm font-semibold text-[#24171C]">
                   Annual Rent Range
@@ -683,9 +703,7 @@ function Properties() {
                       type="number"
                       min="0"
                       value={minRent}
-                      onChange={(event) =>
-                        setMinRent(event.target.value)
-                      }
+                      onChange={handleMinRentChange}
                       placeholder="Minimum rent"
                       className="min-h-11 w-full rounded-lg border border-[#E8DDE1] pl-9 pr-4 text-sm text-[#24171C] outline-none placeholder:text-[#9B8F94] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                     />
@@ -700,9 +718,7 @@ function Properties() {
                       type="number"
                       min="0"
                       value={maxRent}
-                      onChange={(event) =>
-                        setMaxRent(event.target.value)
-                      }
+                      onChange={handleMaxRentChange}
                       placeholder="Maximum rent"
                       className="min-h-11 w-full rounded-lg border border-[#E8DDE1] pl-9 pr-4 text-sm text-[#24171C] outline-none placeholder:text-[#9B8F94] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                     />
@@ -725,7 +741,6 @@ function Properties() {
         </div>
       </section>
 
-      {/* Results */}
       <section className="mx-auto max-w-7xl px-5 pb-14 sm:px-8 lg:px-10 lg:pb-20">
         <div className="flex flex-col gap-4 border-b border-[#E8DDE1] pb-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -758,9 +773,7 @@ function Properties() {
               <select
                 id="sort-properties"
                 value={sortBy}
-                onChange={(event) =>
-                  setSortBy(event.target.value)
-                }
+                onChange={handleSortChange}
                 className="min-h-10 appearance-none rounded-lg border border-[#E8DDE1] bg-white py-2 pl-3 pr-9 text-sm font-medium text-[#24171C] outline-none focus:border-[#7A1F3D]"
               >
                 {sortOptions.map((option) => (
@@ -781,7 +794,6 @@ function Properties() {
           </div>
         </div>
 
-        {/* Filter chips */}
         {!loading && activeFilterCount > 0 && (
           <div className="flex flex-wrap gap-2 py-5">
             {location.trim() && (
@@ -870,7 +882,6 @@ function Properties() {
           </div>
         )}
 
-        {/* Loading */}
         {loading && (
           <div className="flex min-h-[420px] items-center justify-center">
             <div className="text-center">
@@ -886,7 +897,6 @@ function Properties() {
           </div>
         )}
 
-        {/* Error */}
         {!loading && errorMessage && (
           <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-6">
             <h2 className="font-bold text-[#B91C1C]">
@@ -899,7 +909,6 @@ function Properties() {
           </div>
         )}
 
-        {/* Empty */}
         {!loading &&
           !errorMessage &&
           filteredProperties.length === 0 && (
@@ -928,7 +937,6 @@ function Properties() {
             </div>
           )}
 
-        {/* Property Grid */}
         {!loading &&
           !errorMessage &&
           visibleProperties.length > 0 && (
@@ -942,7 +950,6 @@ function Properties() {
                 ))}
               </div>
 
-              {/* Load More */}
               {hasMore && (
                 <div className="mt-10 flex justify-center">
                   <button
@@ -961,17 +968,17 @@ function Properties() {
                 </div>
               )}
 
-              {!hasMore && filteredProperties.length > 0 && (
-                <p className="mt-10 text-center text-xs text-[#756970]">
-                  You've reached the end of the available
-                  properties.
-                </p>
-              )}
+              {!hasMore &&
+                filteredProperties.length > 0 && (
+                  <p className="mt-10 text-center text-xs text-[#756970]">
+                    You've reached the end of the available
+                    properties.
+                  </p>
+                )}
             </>
           )}
       </section>
 
-      {/* Safety Notice */}
       <section className="border-t border-[#E8DDE1] bg-white">
         <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
           <div className="flex items-start gap-3">
@@ -986,11 +993,12 @@ function Properties() {
               </h2>
 
               <p className="mt-2 max-w-4xl text-sm leading-6 text-[#756970]">
-                A RentSure verification indicator is designed to
-                support informed decisions. It is not a legal
+                A RentSure verification indicator is designed
+                to support informed decisions. It is not a legal
                 guarantee of ownership, property condition or
-                transaction outcome. Always inspect a property and
-                verify important information before making payments.
+                transaction outcome. Always inspect a property
+                and verify important information before making
+                payments.
               </p>
             </div>
           </div>
@@ -1001,4 +1009,3 @@ function Properties() {
 }
 
 export default Properties;
-

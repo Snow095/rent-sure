@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
@@ -41,65 +40,80 @@ function AdminReports() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const loadReports = async () => {
-    setLoading(true);
-    setErrorMessage("");
+  useEffect(() => {
+    let cancelled = false;
 
-    try {
-      const { data, error } = await supabase
-        .from("reports")
-        .select(`
-          id,
-          reporter_id,
-          property_id,
-          category,
-          description,
-          severity,
-          status,
-          admin_notes,
-          created_at,
-          updated_at,
-          properties (
+    const loadReports = async () => {
+      setErrorMessage("");
+
+      try {
+        const { data, error } = await supabase
+          .from("reports")
+          .select(`
             id,
-            title,
-            location
-          )
-        `)
-        .order("created_at", {
-          ascending: false,
+            reporter_id,
+            property_id,
+            category,
+            description,
+            severity,
+            status,
+            admin_notes,
+            created_at,
+            updated_at,
+            properties (
+              id,
+              title,
+              location
+            )
+          `)
+          .order("created_at", {
+            ascending: false,
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setReports(data ?? []);
+
+        const initialNotes = {};
+
+        (data ?? []).forEach((report) => {
+          initialNotes[report.id] =
+            report.admin_notes || "";
         });
 
-      if (error) {
-        throw error;
+        setNotes(initialNotes);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          "Error loading reports:",
+          error
+        );
+
+        setErrorMessage(
+          error.message ||
+            "Unable to load reports."
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
+    };
 
-      setReports(data ?? []);
-
-      const initialNotes = {};
-
-      (data ?? []).forEach((report) => {
-        initialNotes[report.id] =
-          report.admin_notes || "";
-      });
-
-      setNotes(initialNotes);
-    } catch (error) {
-      console.error(
-        "Error loading reports:",
-        error
-      );
-
-      setErrorMessage(
-        error.message ||
-          "Unable to load reports."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
     loadReports();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredReports = useMemo(() => {
@@ -167,9 +181,11 @@ function AdminReports() {
     setSuccessMessage("");
 
     if (
-      !["under_review", "resolved", "dismissed"].includes(
-        newStatus
-      )
+      ![
+        "under_review",
+        "resolved",
+        "dismissed",
+      ].includes(newStatus)
     ) {
       setErrorMessage("Invalid report status.");
       return;
@@ -570,4 +586,3 @@ function formatDate(value) {
 }
 
 export default AdminReports;
-

@@ -1,9 +1,11 @@
-
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
+import RoleRoute from "./components/RoleRoute/RoleRoute";
+import GuestRoute from "./components/GuestRoute/GuestRoute";
 import AdminRoute from "./components/AdminRoute/AdminRoute";
+import { useAuth } from "./context/useAuth";
 
 // Public pages
 import Home from "./pages/Home/Home";
@@ -15,17 +17,22 @@ import About from "./pages/About/About";
 import Privacy from "./pages/Privacy/Privacy";
 import Terms from "./pages/Terms/Terms";
 import Safety from "./pages/Safety/Safety";
+
+// Authentication pages
 import Login from "./pages/Login/Login";
 import Register from "./pages/Register/Register";
 import ConfirmEmail from "./pages/ConfirmEmail/ConfirmEmail";
 import ForgotPassword from "./pages/ForgotPassword/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword/ResetPassword";
-import NotFound from "./pages/NotFound/NotFound";
+
+// Account
+import Account from "./pages/Account/Account";
 
 // Renter pages
 import Dashboard from "./pages/renter/Dashboard/Dashboard";
 import SavedProperties from "./pages/renter/SavedProperties/SavedProperties";
 import ViewingRequests from "./pages/renter/ViewingRequests/ViewingRequests";
+import ViewingRequest from "./pages/renter/ViewingRequest/ViewingRequest";
 import RenterReports from "./pages/renter/Reports/Reports";
 import ReportProperty from "./pages/renter/ReportProperty/ReportProperty";
 
@@ -49,6 +56,45 @@ import VerificationReview from "./pages/admin/Verification/VerificationReview";
 import Reports from "./pages/admin/Reports/Reports";
 import AdminViewingRequests from "./pages/admin/ViewingRequests/ViewingRequests";
 
+// 404
+import NotFound from "./pages/NotFound/NotFound";
+
+function HomeRoute() {
+  const { user, role, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <main className="flex min-h-[70vh] items-center justify-center bg-[#FAF8F9] px-5">
+        <div className="text-center">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-[#F8EDEF] border-t-[#7A1F3D]" />
+
+          <p className="mt-4 text-sm font-medium text-[#756970]">
+            Loading your dashboard...
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return <Home />;
+  }
+
+  if (role === "renter") {
+    return <Navigate to="/renter/dashboard" replace />;
+  }
+
+  if (role === "agent") {
+    return <Navigate to="/agent/dashboard" replace />;
+  }
+
+  if (role === "admin") {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
+  return <Home />;
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -56,10 +102,13 @@ function App() {
 
       <Routes>
         {/* =====================================================
-            PUBLIC ROUTES
+            HOME / PUBLIC ROUTES
         ====================================================== */}
 
-        <Route path="/" element={<Home />} />
+        <Route
+          path="/"
+          element={<HomeRoute />}
+        />
 
         <Route
           path="/properties"
@@ -102,18 +151,20 @@ function App() {
         />
 
         {/* =====================================================
-            AUTH ROUTES
+            GUEST / AUTHENTICATION ROUTES
         ====================================================== */}
 
-        <Route
-          path="/login"
-          element={<Login />}
-        />
+        <Route element={<GuestRoute />}>
+          <Route
+            path="/login"
+            element={<Login />}
+          />
 
-        <Route
-          path="/register"
-          element={<Register />}
-        />
+          <Route
+            path="/register"
+            element={<Register />}
+          />
+        </Route>
 
         <Route
           path="/confirm-email"
@@ -135,74 +186,105 @@ function App() {
         ====================================================== */}
 
         <Route element={<ProtectedRoute />}>
-          {/* ---------------- RENTER ---------------- */}
-
           <Route
-            path="/renter/dashboard"
-            element={<Dashboard />}
+            path="/account"
+            element={<Account />}
           />
 
-          <Route
-            path="/renter/saved-properties"
-            element={<SavedProperties />}
-          />
+          {/* ===================================================
+              RENTER ROUTES
+          ==================================================== */}
 
           <Route
-            path="/renter/viewing-requests"
-            element={<ViewingRequests />}
-          />
+            element={
+              <RoleRoute allowedRoles={["renter"]} />
+            }
+          >
+            <Route
+              path="/renter/dashboard"
+              element={<Dashboard />}
+            />
+
+            <Route
+              path="/renter/saved-properties"
+              element={<SavedProperties />}
+            />
+
+            <Route
+              path="/renter/viewing-requests"
+              element={<ViewingRequests />}
+            />
+
+            <Route
+              path="/renter/reports"
+              element={<RenterReports />}
+            />
+
+            <Route
+              path="/properties/:id/viewing"
+              element={<ViewingRequest />}
+            />
+
+            <Route
+              path="/properties/:id/report"
+              element={<ReportProperty />}
+            />
+          </Route>
+
+          {/* ===================================================
+              AGENT ROUTES
+          ==================================================== */}
 
           <Route
-            path="/renter/reports"
-            element={<RenterReports />}
-          />
+            element={
+              <RoleRoute allowedRoles={["agent"]} />
+            }
+          >
+            <Route
+              path="/agent/dashboard"
+              element={<AgentDashboard />}
+            />
 
-          <Route
-            path="/properties/:id/report"
-            element={<ReportProperty />}
-          />
+            <Route
+              path="/agent/properties"
+              element={<AgentProperties />}
+            />
 
-          {/* ---------------- AGENT ---------------- */}
+            <Route
+              path="/agent/add-property"
+              element={<AddProperty />}
+            />
 
-          <Route
-            path="/agent/dashboard"
-            element={<AgentDashboard />}
-          />
+            <Route
+              path="/agent/properties/:id/edit"
+              element={<EditProperty />}
+            />
 
-          <Route
-            path="/agent/properties"
-            element={<AgentProperties />}
-          />
+            <Route
+              path="/agent/verification"
+              element={<AgentVerification />}
+            />
 
-          <Route
-            path="/agent/add-property"
-            element={<AddProperty />}
-          />
+            <Route
+              path="/agent/verification/:propertyId"
+              element={<VerificationDetails />}
+            />
 
-          <Route
-            path="/agent/properties/:id/edit"
-            element={<EditProperty />}
-          />
+            <Route
+              path="/agent/verification/:propertyId/details"
+              element={<VerificationDetails />}
+            />
 
-          <Route
-            path="/agent/verification/:propertyId"
-            element={<AgentVerification />}
-          />
+            <Route
+              path="/agent/reports"
+              element={<AgentReports />}
+            />
 
-          <Route
-            path="/agent/verification/:propertyId/details"
-            element={<VerificationDetails />}
-          />
-
-          <Route
-            path="/agent/reports"
-            element={<AgentReports />}
-          />
-
-          <Route
-            path="/agent/viewing-requests"
-            element={<AgentViewingRequests />}
-          />
+            <Route
+              path="/agent/viewing-requests"
+              element={<AgentViewingRequests />}
+            />
+          </Route>
         </Route>
 
         {/* =====================================================
@@ -265,4 +347,3 @@ function App() {
 }
 
 export default App;
-

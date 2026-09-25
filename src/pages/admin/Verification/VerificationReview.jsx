@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -20,47 +19,63 @@ import {
 } from "lucide-react";
 
 import { supabase } from "../../../services/supabase/client";
-import { useAuth } from "../../../context/AuthContext";
+import { useAuth } from "../../../context/useAuth";
 
 function VerificationReview() {
   const { verificationId } = useParams();
   const navigate = useNavigate();
-  const { user, role, loading: authLoading } = useAuth();
 
-  const [verification, setVerification] = useState(null);
+  const {
+    user,
+    role,
+    loading: authLoading,
+  } = useAuth();
+
+  const [verification, setVerification] =
+    useState(null);
   const [property, setProperty] = useState(null);
   const [agent, setAgent] = useState(null);
   const [documents, setDocuments] = useState([]);
 
   const [loading, setLoading] = useState(true);
-  const [openingDocument, setOpeningDocument] = useState(null);
+  const [openingDocument, setOpeningDocument] =
+    useState(null);
 
   const [riskScore, setRiskScore] = useState("");
   const [reviewNotes, setReviewNotes] = useState("");
 
   const [saving, setSaving] = useState(false);
-  const [reviewingDocument, setReviewingDocument] = useState(null);
+  const [reviewingDocument, setReviewingDocument] =
+    useState(null);
 
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] =
+    useState("");
+  const [successMessage, setSuccessMessage] =
+    useState("");
 
-  const [documentNotes, setDocumentNotes] = useState({});
+  const [documentNotes, setDocumentNotes] =
+    useState({});
 
   useEffect(() => {
-    if (!authLoading && user && role === "admin") {
-      fetchVerification();
-    } else if (!authLoading && (!user || role !== "admin")) {
-      setLoading(false);
+    if (
+      authLoading ||
+      !user?.id ||
+      role !== "admin" ||
+      !verificationId
+    ) {
+      return undefined;
     }
-  }, [verificationId, user, role, authLoading]);
 
-  const fetchVerification = async () => {
-    setLoading(true);
-    setErrorMessage("");
+    let cancelled = false;
 
-    try {
-      const { data: verificationData, error: verificationError } =
-        await supabase
+    const loadVerification = async () => {
+      setErrorMessage("");
+
+      try {
+        const {
+          data: verificationData,
+          error: verificationError,
+        } = await supabase
           .from("property_verifications")
           .select(`
             id,
@@ -75,21 +90,31 @@ function VerificationReview() {
             updated_at
           `)
           .eq("id", verificationId)
-          .single();
+          .maybeSingle();
 
-      if (verificationError) {
-        throw verificationError;
-      }
+        if (verificationError) {
+          throw verificationError;
+        }
 
-      if (!verificationData) {
-        throw new Error("Verification record could not be found.");
-      }
+        if (!verificationData) {
+          throw new Error(
+            "Verification record could not be found."
+          );
+        }
 
-      setVerification(verificationData);
-      setReviewNotes(verificationData.review_notes || "");
+        if (cancelled) {
+          return;
+        }
 
-      const { data: propertyData, error: propertyError } =
-        await supabase
+        setVerification(verificationData);
+        setReviewNotes(
+          verificationData.review_notes || ""
+        );
+
+        const {
+          data: propertyData,
+          error: propertyError,
+        } = await supabase
           .from("properties")
           .select(`
             id,
@@ -108,29 +133,50 @@ function VerificationReview() {
             updated_at
           `)
           .eq("id", verificationData.property_id)
-          .single();
+          .maybeSingle();
 
-      if (propertyError) {
-        throw propertyError;
-      }
-
-      setProperty(propertyData);
-
-      if (propertyData?.agent_id) {
-        const { data: agentData, error: agentError } = await supabase
-          .from("profiles")
-          .select("id, full_name, role, created_at")
-          .eq("id", propertyData.agent_id)
-          .eq("role", "agent")
-          .single();
-
-        if (!agentError) {
-          setAgent(agentData);
+        if (propertyError) {
+          throw propertyError;
         }
-      }
 
-      const { data: documentsData, error: documentsError } =
-        await supabase
+        if (!propertyData) {
+          throw new Error(
+            "The property linked to this verification could not be found."
+          );
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setProperty(propertyData);
+
+        if (propertyData.agent_id) {
+          const {
+            data: agentData,
+            error: agentError,
+          } = await supabase
+            .from("profiles")
+            .select(
+              "id, full_name, role, created_at"
+            )
+            .eq("id", propertyData.agent_id)
+            .maybeSingle();
+
+          if (agentError) {
+            console.error(
+              "Error loading agent profile:",
+              agentError
+            );
+          } else if (!cancelled) {
+            setAgent(agentData);
+          }
+        }
+
+        const {
+          data: documentsData,
+          error: documentsError,
+        } = await supabase
           .from("verification_documents")
           .select(`
             id,
@@ -146,40 +192,87 @@ function VerificationReview() {
             created_at,
             updated_at
           `)
-          .eq("verification_id", verificationData.id)
-          .order("created_at", { ascending: true });
+          .eq(
+            "verification_id",
+            verificationData.id
+          )
+          .order("created_at", {
+            ascending: true,
+          });
 
-      if (documentsError) {
-        throw documentsError;
+        if (documentsError) {
+          throw documentsError;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const loadedDocuments =
+          documentsData || [];
+
+        setDocuments(loadedDocuments);
+
+        const existingNotes = {};
+
+        loadedDocuments.forEach((document) => {
+          existingNotes[document.id] =
+            document.review_notes || "";
+        });
+
+        setDocumentNotes(existingNotes);
+      } catch (error) {
+        console.error(
+          "Error loading verification review:",
+          error
+        );
+
+        if (!cancelled) {
+          setVerification(null);
+          setProperty(null);
+          setAgent(null);
+          setDocuments([]);
+
+          setErrorMessage(
+            error?.message ||
+              "Unable to load this verification review."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
+    };
 
-      setDocuments(documentsData || []);
+    loadVerification();
 
-      const existingNotes = {};
-
-      (documentsData || []).forEach((document) => {
-        existingNotes[document.id] = document.review_notes || "";
-      });
-
-      setDocumentNotes(existingNotes);
-    } catch (error) {
-      console.error("Error loading verification review:", error);
-
-      setErrorMessage(
-        error.message ||
-          "Unable to load this verification review."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    verificationId,
+    user?.id,
+    role,
+    authLoading,
+  ]);
 
   const formatAmount = (amount) => {
-    if (amount === null || amount === undefined) {
+    if (
+      amount === null ||
+      amount === undefined ||
+      amount === ""
+    ) {
       return "Not specified";
     }
 
-    return `₦${Number(amount).toLocaleString()}`;
+    const numericAmount = Number(amount);
+
+    if (!Number.isFinite(numericAmount)) {
+      return "Not specified";
+    }
+
+    return `₦${numericAmount.toLocaleString("en-NG")}`;
   };
 
   const formatDate = (date) => {
@@ -187,11 +280,14 @@ function VerificationReview() {
       return "Not available";
     }
 
-    return new Date(date).toLocaleDateString("en-NG", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    return new Date(date).toLocaleDateString(
+      "en-NG",
+      {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }
+    );
   };
 
   const formatDateTime = (date) => {
@@ -199,10 +295,13 @@ function VerificationReview() {
       return "Not available";
     }
 
-    return new Date(date).toLocaleString("en-NG", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
+    return new Date(date).toLocaleString(
+      "en-NG",
+      {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }
+    );
   };
 
   const formatFileSize = (bytes) => {
@@ -215,10 +314,15 @@ function VerificationReview() {
     }
 
     if (bytes < 1024 * 1024) {
-      return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1024).toFixed(
+        1
+      )} KB`;
     }
 
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(
+      bytes /
+      (1024 * 1024)
+    ).toFixed(1)} MB`;
   };
 
   const getStatusDetails = (status) => {
@@ -300,16 +404,31 @@ function VerificationReview() {
   };
 
   const getRiskDetails = (score) => {
-    if (score === null || score === undefined || score === "") {
+    if (
+      score === null ||
+      score === undefined ||
+      score === ""
+    ) {
       return {
         label: "Not scored",
         description:
           "A risk score has not yet been assigned to this property.",
-        className: "bg-gray-50 text-gray-700 border-gray-200",
+        className:
+          "bg-gray-50 text-gray-700 border-gray-200",
       };
     }
 
     const numericScore = Number(score);
+
+    if (!Number.isFinite(numericScore)) {
+      return {
+        label: "Invalid score",
+        description:
+          "The stored risk score is not a valid numeric value.",
+        className:
+          "bg-gray-50 text-gray-700 border-gray-200",
+      };
+    }
 
     if (numericScore <= 29) {
       return {
@@ -345,9 +464,15 @@ function VerificationReview() {
     setErrorMessage("");
 
     try {
-      const { data, error } = await supabase.storage
+      const {
+        data,
+        error,
+      } = await supabase.storage
         .from("verification-documents")
-        .createSignedUrl(document.file_path, 60 * 10);
+        .createSignedUrl(
+          document.file_path,
+          60 * 10
+        );
 
       if (error) {
         throw error;
@@ -365,10 +490,13 @@ function VerificationReview() {
         "noopener,noreferrer"
       );
     } catch (error) {
-      console.error("Error opening verification document:", error);
+      console.error(
+        "Error opening verification document:",
+        error
+      );
 
       setErrorMessage(
-        error.message ||
+        error?.message ||
           "Unable to open this verification document."
       );
     } finally {
@@ -376,11 +504,16 @@ function VerificationReview() {
     }
   };
 
-  const handleDocumentNoteChange = (documentId, value) => {
+  const handleDocumentNoteChange = (
+    documentId,
+    value
+  ) => {
     setDocumentNotes((current) => ({
       ...current,
       [documentId]: value,
     }));
+
+    setSuccessMessage("");
   };
 
   const handleDocumentReview = async (
@@ -397,7 +530,9 @@ function VerificationReview() {
         "needs_information",
       ].includes(reviewStatus)
     ) {
-      setErrorMessage("Invalid document review status.");
+      setErrorMessage(
+        "Invalid document review status."
+      );
       return;
     }
 
@@ -417,15 +552,32 @@ function VerificationReview() {
     setReviewingDocument(document.id);
 
     try {
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from("verification_documents")
         .update({
           review_status: reviewStatus,
           review_notes: notes || null,
-          updated_at: new Date().toISOString(),
+          updated_at:
+            new Date().toISOString(),
         })
         .eq("id", document.id)
-        .select()
+        .select(`
+          id,
+          verification_id,
+          uploaded_by,
+          document_type,
+          file_name,
+          file_path,
+          file_type,
+          file_size,
+          review_status,
+          review_notes,
+          created_at,
+          updated_at
+        `)
         .single();
 
       if (error) {
@@ -454,7 +606,7 @@ function VerificationReview() {
       );
 
       setErrorMessage(
-        error.message ||
+        error?.message ||
           "Unable to update this document review."
       );
     } finally {
@@ -462,7 +614,9 @@ function VerificationReview() {
     }
   };
 
-  const handleFinalDecision = async (decision) => {
+  const handleFinalDecision = async (
+    decision
+  ) => {
     setErrorMessage("");
     setSuccessMessage("");
 
@@ -473,12 +627,16 @@ function VerificationReview() {
         "needs_information",
       ].includes(decision)
     ) {
-      setErrorMessage("Invalid verification decision.");
+      setErrorMessage(
+        "Invalid verification decision."
+      );
       return;
     }
 
     const parsedRiskScore =
-      riskScore === "" ? null : Number(riskScore);
+      riskScore === ""
+        ? null
+        : Number(riskScore);
 
     if (
       parsedRiskScore === null ||
@@ -492,9 +650,12 @@ function VerificationReview() {
       return;
     }
 
+    const trimmedNotes =
+      reviewNotes.trim();
+
     if (
       decision !== "verified" &&
-      !reviewNotes.trim()
+      !trimmedNotes
     ) {
       setErrorMessage(
         "Please provide review notes for this decision."
@@ -502,13 +663,13 @@ function VerificationReview() {
       return;
     }
 
-    if (
-      decision === "verified"
-    ) {
-      const rejectedDocument = documents.find(
-        (document) =>
-          document.review_status === "rejected"
-      );
+    if (decision === "verified") {
+      const rejectedDocument =
+        documents.find(
+          (document) =>
+            document.review_status ===
+            "rejected"
+        );
 
       if (rejectedDocument) {
         setErrorMessage(
@@ -517,10 +678,12 @@ function VerificationReview() {
         return;
       }
 
-      const pendingDocument = documents.find(
-        (document) =>
-          document.review_status === "pending"
-      );
+      const pendingDocument =
+        documents.find(
+          (document) =>
+            document.review_status ===
+            "pending"
+        );
 
       if (pendingDocument) {
         setErrorMessage(
@@ -529,11 +692,12 @@ function VerificationReview() {
         return;
       }
 
-      const needsInformationDocument = documents.find(
-        (document) =>
-          document.review_status ===
-          "needs_information"
-      );
+      const needsInformationDocument =
+        documents.find(
+          (document) =>
+            document.review_status ===
+            "needs_information"
+        );
 
       if (needsInformationDocument) {
         setErrorMessage(
@@ -544,8 +708,10 @@ function VerificationReview() {
     }
 
     const decisionLabels = {
-      verified: "approve this property verification",
-      rejected: "reject this property verification",
+      verified:
+        "approve this property verification",
+      rejected:
+        "reject this property verification",
       needs_information:
         "request additional information for this verification",
     };
@@ -561,82 +727,88 @@ function VerificationReview() {
     setSaving(true);
 
     try {
-      const now = new Date().toISOString();
+      const now =
+        new Date().toISOString();
 
-      const { error: verificationError } =
-        await supabase
-          .from("property_verifications")
-          .update({
-            status: decision,
-            review_notes:
-              reviewNotes.trim() || null,
-            reviewed_by: user.id,
-            reviewed_at: now,
-            updated_at: now,
-          })
-          .eq("id", verification.id);
+      const {
+        data: updatedVerification,
+        error: verificationError,
+      } = await supabase
+        .from("property_verifications")
+        .update({
+          status: decision,
+          review_notes:
+            trimmedNotes || null,
+          reviewed_by: user.id,
+          reviewed_at: now,
+          updated_at: now,
+        })
+        .eq("id", verification.id)
+        .select(`
+          id,
+          property_id,
+          submitted_by,
+          status,
+          document_count,
+          review_notes,
+          reviewed_by,
+          reviewed_at,
+          created_at,
+          updated_at
+        `)
+        .single();
 
       if (verificationError) {
         throw verificationError;
       }
 
-      const propertyUpdate = {
-        verification_status: decision,
-        risk_score: parsedRiskScore,
-        updated_at: now,
-      };
-
-      if (decision === "verified") {
-        propertyUpdate.property_status = "active";
-      }
-
-      if (decision === "rejected") {
-        propertyUpdate.property_status = "flagged";
-      }
-
-      if (
-        decision === "needs_information"
-      ) {
-        propertyUpdate.property_status = "active";
-      }
-
-      const { error: propertyError } =
-        await supabase
-          .from("properties")
-          .update(propertyUpdate)
-          .eq("id", verification.property_id);
+      const {
+        data: updatedProperty,
+        error: propertyError,
+      } = await supabase
+        .from("properties")
+        .update({
+          verification_status: decision,
+          risk_score: parsedRiskScore,
+          updated_at: now,
+        })
+        .eq(
+          "id",
+          verification.property_id
+        )
+        .select(`
+          id,
+          agent_id,
+          title,
+          location,
+          property_type,
+          annual_rent,
+          bedrooms,
+          bathrooms,
+          description,
+          verification_status,
+          property_status,
+          risk_score,
+          created_at,
+          updated_at
+        `)
+        .single();
 
       if (propertyError) {
         throw propertyError;
       }
 
-      setVerification((current) => ({
-        ...current,
-        status: decision,
-        review_notes:
-          reviewNotes.trim() || null,
-        reviewed_by: user.id,
-        reviewed_at: now,
-        updated_at: now,
-      }));
+      setVerification(
+        updatedVerification
+      );
 
-      setProperty((current) => ({
-        ...current,
-        verification_status: decision,
-        risk_score: parsedRiskScore,
-        property_status:
-          decision === "verified"
-            ? "active"
-            : decision === "rejected"
-              ? "flagged"
-              : current.property_status,
-      }));
+      setProperty(updatedProperty);
 
       setSuccessMessage(
         decision === "verified"
           ? "Property verification approved successfully."
           : decision === "rejected"
-            ? "Property rejected and flagged successfully."
+            ? "Property verification rejected successfully."
             : "Additional information has been requested successfully."
       );
 
@@ -650,7 +822,7 @@ function VerificationReview() {
       );
 
       setErrorMessage(
-        error.message ||
+        error?.message ||
           "Unable to complete the verification decision."
       );
     } finally {
@@ -658,7 +830,7 @@ function VerificationReview() {
     }
   };
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <main className="min-h-screen bg-[#FAF8F9] px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto flex min-h-[60vh] max-w-6xl items-center justify-center">
@@ -701,6 +873,60 @@ function VerificationReview() {
             >
               Return Home
             </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!verificationId) {
+    return (
+      <main className="min-h-screen bg-[#FAF8F9] px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+
+              <div>
+                <h1 className="font-semibold text-red-800">
+                  Verification ID is missing.
+                </h1>
+
+                <p className="mt-1 text-sm leading-6 text-red-700">
+                  A valid verification ID is required to
+                  open this review.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              to="/admin/verification"
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF]"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Verification
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#FAF8F9] px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[60vh] max-w-6xl items-center justify-center">
+          <div className="text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#F8EDEF]">
+              <Loader2
+                className="h-6 w-6 animate-spin text-[#7A1F3D]"
+                aria-hidden="true"
+              />
+            </div>
+
+            <p className="mt-4 text-sm font-medium text-[#756970]">
+              Loading verification review...
+            </p>
           </div>
         </div>
       </main>
@@ -753,8 +979,6 @@ function VerificationReview() {
   return (
     <main className="min-h-screen bg-[#FAF8F9]">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-
-        {/* Header */}
         <div className="mb-8">
           <Link
             to="/admin/verification"
@@ -780,9 +1004,10 @@ function VerificationReview() {
               </div>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[#756970]">
-                Review the submitted documents, assess the available
-                information, assign a RentSure risk score, and record
-                the final verification decision.
+                Review the submitted documents, assess the
+                available information, assign a RentSure risk
+                score, and record the final verification
+                decision.
               </p>
             </div>
 
@@ -798,7 +1023,6 @@ function VerificationReview() {
           </div>
         </div>
 
-        {/* Alerts */}
         {(errorMessage || successMessage) && (
           <div className="mb-6">
             {errorMessage && (
@@ -820,7 +1044,7 @@ function VerificationReview() {
             )}
 
             {successMessage && (
-              <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+              <div className="mt-3 rounded-xl border border-green-200 bg-green-50 p-4">
                 <div className="flex items-start gap-3">
                   <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
 
@@ -834,10 +1058,7 @@ function VerificationReview() {
         )}
 
         <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-
-          {/* Main Content */}
           <div className="space-y-6">
-
             {/* Property */}
             <section className="overflow-hidden rounded-2xl border border-[#E8DDE1] bg-white shadow-sm">
               <div className="border-b border-[#E8DDE1] p-6 sm:p-7">
@@ -861,6 +1082,7 @@ function VerificationReview() {
                   <div className="rounded-xl bg-[#FAF8F9] p-4">
                     <div className="flex items-center gap-2 text-[#756970]">
                       <MapPin className="h-4 w-4" />
+
                       <span className="text-xs font-semibold uppercase tracking-wide">
                         Location
                       </span>
@@ -887,7 +1109,9 @@ function VerificationReview() {
                     </p>
 
                     <p className="mt-2 text-sm font-semibold text-[#24171C]">
-                      {formatAmount(property.annual_rent)}
+                      {formatAmount(
+                        property.annual_rent
+                      )}
                     </p>
                   </div>
 
@@ -897,7 +1121,8 @@ function VerificationReview() {
                     </p>
 
                     <p className="mt-2 text-sm font-semibold capitalize text-[#24171C]">
-                      {property.property_status}
+                      {property.property_status ||
+                        "Not specified"}
                     </p>
                   </div>
                 </div>
@@ -905,6 +1130,7 @@ function VerificationReview() {
                 <div className="mt-5 flex flex-wrap gap-3">
                   <span className="inline-flex items-center gap-2 rounded-lg border border-[#E8DDE1] bg-white px-3 py-2 text-sm font-medium text-[#756970]">
                     <BedDouble className="h-4 w-4" />
+
                     {property.bedrooms}{" "}
                     {property.bedrooms === 1
                       ? "Bedroom"
@@ -913,6 +1139,7 @@ function VerificationReview() {
 
                   <span className="inline-flex items-center gap-2 rounded-lg border border-[#E8DDE1] bg-white px-3 py-2 text-sm font-medium text-[#756970]">
                     <Bath className="h-4 w-4" />
+
                     {property.bathrooms}{" "}
                     {property.bathrooms === 1
                       ? "Bathroom"
@@ -957,12 +1184,15 @@ function VerificationReview() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="font-semibold text-[#24171C]">
-                        {agent.full_name}
+                        {agent.full_name ||
+                          "Unnamed agent"}
                       </p>
 
                       <p className="mt-1 text-xs text-[#756970]">
                         Agent account created{" "}
-                        {formatDate(agent.created_at)}
+                        {formatDate(
+                          agent.created_at
+                        )}
                       </p>
                     </div>
 
@@ -972,7 +1202,8 @@ function VerificationReview() {
                   </div>
                 ) : (
                   <p className="text-sm text-[#756970]">
-                    Agent profile information could not be loaded.
+                    Agent profile information could not
+                    be loaded.
                   </p>
                 )}
               </div>
@@ -988,8 +1219,8 @@ function VerificationReview() {
                     </h2>
 
                     <p className="mt-1 text-sm text-[#756970]">
-                      Review each submitted document before making the
-                      final verification decision.
+                      Review each submitted document before
+                      making the final verification decision.
                     </p>
                   </div>
 
@@ -1012,8 +1243,8 @@ function VerificationReview() {
                     </p>
 
                     <p className="mt-1 text-sm text-[#756970]">
-                      This verification does not currently have any
-                      document records.
+                      This verification does not currently
+                      have any document records.
                     </p>
                   </div>
                 ) : (
@@ -1024,7 +1255,8 @@ function VerificationReview() {
                       );
 
                     const isReviewing =
-                      reviewingDocument === document.id;
+                      reviewingDocument ===
+                      document.id;
 
                     return (
                       <div
@@ -1082,20 +1314,25 @@ function VerificationReview() {
                           <button
                             type="button"
                             onClick={() =>
-                              openDocument(document)
+                              openDocument(
+                                document
+                              )
                             }
                             disabled={
-                              openingDocument === document.id
+                              openingDocument ===
+                              document.id
                             }
                             className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#E8DDE1] px-4 py-3 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
                           >
-                            {openingDocument === document.id ? (
+                            {openingDocument ===
+                            document.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <ExternalLink className="h-4 w-4" />
                             )}
 
-                            {openingDocument === document.id
+                            {openingDocument ===
+                            document.id
                               ? "Opening..."
                               : "Open Secure Document"}
                           </button>
@@ -1128,9 +1365,13 @@ function VerificationReview() {
                             />
 
                             <p className="mt-1 text-right text-xs text-[#756970]">
-                              {(documentNotes[
-                                document.id
-                              ] || "").length}
+                              {
+                                (
+                                  documentNotes[
+                                    document.id
+                                  ] || ""
+                                ).length
+                              }
                               /1000
                             </p>
                           </div>
@@ -1201,7 +1442,9 @@ function VerificationReview() {
                               </p>
 
                               <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[#24171C]">
-                                {document.review_notes}
+                                {
+                                  document.review_notes
+                                }
                               </p>
                             </div>
                           )}
@@ -1216,7 +1459,6 @@ function VerificationReview() {
 
           {/* Sidebar */}
           <aside className="space-y-6">
-
             {/* Submission Summary */}
             <section className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm">
               <h2 className="text-lg font-bold text-[#24171C]">
@@ -1252,7 +1494,8 @@ function VerificationReview() {
                   </p>
 
                   <p className="mt-1 text-sm font-semibold capitalize text-[#24171C]">
-                    {property.verification_status}
+                    {property.verification_status ||
+                      "Not reviewed"}
                   </p>
                 </div>
 
@@ -1267,8 +1510,10 @@ function VerificationReview() {
                         "Not scored"}
                     </span>
 
-                    {property.risk_score !== null &&
-                      property.risk_score !== undefined && (
+                    {property.risk_score !==
+                      null &&
+                      property.risk_score !==
+                        undefined && (
                         <span
                           className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${riskDetails.className}`}
                         >
@@ -1293,8 +1538,8 @@ function VerificationReview() {
                   </h2>
 
                   <p className="mt-1 text-sm leading-6 text-[#756970]">
-                    Assign a score from 0 to 100 based on the information
-                    available during review.
+                    Assign a score from 0 to 100 based on
+                    the information available during review.
                   </p>
                 </div>
               </div>
@@ -1316,7 +1561,9 @@ function VerificationReview() {
                     step="1"
                     value={riskScore}
                     onChange={(event) =>
-                      setRiskScore(event.target.value)
+                      setRiskScore(
+                        event.target.value
+                      )
                     }
                     placeholder="0 - 100"
                     className="w-full rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 pr-16 text-sm font-semibold text-[#24171C] outline-none transition placeholder:font-normal placeholder:text-[#A2989D] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
@@ -1332,6 +1579,7 @@ function VerificationReview() {
                     <p className="text-xs font-semibold text-green-700">
                       0–29
                     </p>
+
                     <p className="mt-1 text-[11px] text-green-600">
                       Low
                     </p>
@@ -1341,6 +1589,7 @@ function VerificationReview() {
                     <p className="text-xs font-semibold text-amber-700">
                       30–59
                     </p>
+
                     <p className="mt-1 text-[11px] text-amber-600">
                       Moderate
                     </p>
@@ -1350,6 +1599,7 @@ function VerificationReview() {
                     <p className="text-xs font-semibold text-red-700">
                       60–100
                     </p>
+
                     <p className="mt-1 text-[11px] text-red-600">
                       High
                     </p>
@@ -1365,14 +1615,17 @@ function VerificationReview() {
               </h2>
 
               <p className="mt-1 text-sm leading-6 text-[#756970]">
-                Explain the decision clearly. Notes are required when
-                rejecting a verification or requesting more information.
+                Explain the decision clearly. Notes are
+                required when rejecting a verification or
+                requesting more information.
               </p>
 
               <textarea
                 value={reviewNotes}
                 onChange={(event) =>
-                  setReviewNotes(event.target.value)
+                  setReviewNotes(
+                    event.target.value
+                  )
                 }
                 rows={7}
                 maxLength={2000}
@@ -1392,15 +1645,18 @@ function VerificationReview() {
               </h2>
 
               <p className="mt-1 text-sm leading-6 text-[#756970]">
-                This action will update the verification record and the
-                related property.
+                This action will update the verification
+                record and the related property's
+                verification fields.
               </p>
 
               <div className="mt-5 space-y-3">
                 <button
                   type="button"
                   onClick={() =>
-                    handleFinalDecision("verified")
+                    handleFinalDecision(
+                      "verified"
+                    )
                   }
                   disabled={saving}
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1436,7 +1692,9 @@ function VerificationReview() {
                 <button
                   type="button"
                   onClick={() =>
-                    handleFinalDecision("rejected")
+                    handleFinalDecision(
+                      "rejected"
+                    )
                   }
                   disabled={saving}
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1463,16 +1721,17 @@ function VerificationReview() {
                   </h2>
 
                   <p className="mt-2 text-sm leading-6 text-white/75">
-                    Verification decisions should be based on the
-                    documents and information available through RentSure.
-                    A RentSure verification does not constitute a legal
-                    guarantee of ownership, title, property condition,
-                    availability, or transaction outcome.
+                    Verification decisions should be based
+                    on the documents and information
+                    available through RentSure. A RentSure
+                    verification does not constitute a legal
+                    guarantee of ownership, title, property
+                    condition, availability, or transaction
+                    outcome.
                   </p>
                 </div>
               </div>
             </section>
-
           </aside>
         </div>
       </div>
@@ -1481,4 +1740,3 @@ function VerificationReview() {
 }
 
 export default VerificationReview;
-

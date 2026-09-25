@@ -1,11 +1,14 @@
 import {
+  createContext,
+  createElement,
   useCallback,
   useEffect,
   useState,
 } from "react";
 
-import { AuthContext } from "./AuthContext";
 import { supabase } from "../services/supabase/client";
+
+export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -103,8 +106,7 @@ export function AuthProvider({ children }) {
 
   const syncSession = useCallback(
     async (session) => {
-      const currentUser =
-        session?.user ?? null;
+      const currentUser = session?.user ?? null;
 
       if (!currentUser) {
         setUser(null);
@@ -313,20 +315,22 @@ export function AuthProvider({ children }) {
     return resolvedRole;
   };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        role,
-        loading,
-        signUp,
-        signIn,
-        signOut,
-        getDashboardPath,
-        refreshProfile,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const contextValue = {
+    user,
+    role,
+    loading,
+    signUp,
+    signIn,
+    signOut,
+    getDashboardPath,
+    refreshProfile,
+  };
+
+  return createElement(
+    AuthContext.Provider,
+    {
+      value: contextValue,
+    },
+    children
   );
 }

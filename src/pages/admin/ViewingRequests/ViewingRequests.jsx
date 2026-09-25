@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -24,92 +23,105 @@ function AdminViewingRequests() {
   const [loading, setLoading] = useState(true);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] =
-    useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
-  const loadRequests = async () => {
-    setLoading(true);
+  useEffect(() => {
+    let cancelled = false;
 
-    try {
-      const { data, error } = await supabase
-        .from("viewing_requests")
-        .select(`
-          id,
-          renter_id,
-          property_id,
-          requested_date,
-          requested_time,
-          status,
-          renter_notes,
-          agent_notes,
-          created_at,
-          properties (
+    const loadRequests = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("viewing_requests")
+          .select(`
             id,
-            title,
-            location,
-            agent_id
-          )
-        `)
-        .order("created_at", {
-          ascending: false,
-        });
+            renter_id,
+            property_id,
+            requested_date,
+            requested_time,
+            status,
+            renter_notes,
+            agent_notes,
+            created_at,
+            properties (
+              id,
+              title,
+              location,
+              agent_id
+            )
+          `)
+          .order("created_at", {
+            ascending: false,
+          });
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      const rows = data ?? [];
+        const rows = data ?? [];
 
-      const renterIds = [
-        ...new Set(
-          rows.map(
-            (request) => request.renter_id
-          )
-        ),
-      ];
+        const renterIds = [
+          ...new Set(
+            rows.map((request) => request.renter_id)
+          ),
+        ];
 
-      let profiles = [];
+        let profiles = [];
 
-      if (renterIds.length > 0) {
-        const { data: profileData, error: profileError } =
-          await supabase
+        if (renterIds.length > 0) {
+          const {
+            data: profileData,
+            error: profileError,
+          } = await supabase
             .from("profiles")
             .select("id, full_name, role")
             .in("id", renterIds);
 
-        if (profileError) {
-          throw profileError;
+          if (profileError) {
+            throw profileError;
+          }
+
+          profiles = profileData ?? [];
         }
 
-        profiles = profileData ?? [];
+        if (cancelled) {
+          return;
+        }
+
+        const profileMap = Object.fromEntries(
+          profiles.map((profile) => [
+            profile.id,
+            profile,
+          ])
+        );
+
+        setRequests(
+          rows.map((request) => ({
+            ...request,
+            renter:
+              profileMap[request.renter_id] || null,
+          }))
+        );
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          "Error loading viewing requests:",
+          error
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
+    };
 
-      const profileMap = Object.fromEntries(
-        profiles.map((profile) => [
-          profile.id,
-          profile,
-        ])
-      );
-
-      setRequests(
-        rows.map((request) => ({
-          ...request,
-          renter:
-            profileMap[request.renter_id] || null,
-        }))
-      );
-    } catch (error) {
-      console.error(
-        "Error loading viewing requests:",
-        error
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
     loadRequests();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredRequests = useMemo(() => {
@@ -169,7 +181,7 @@ function AdminViewingRequests() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756970]">
-            Monitor viewing activity across RentSure's
+            Monitor viewing activity across RentSure&apos;s
             properties.
           </p>
         </header>
@@ -519,4 +531,3 @@ function formatTime(value) {
 }
 
 export default AdminViewingRequests;
-

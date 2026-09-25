@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
@@ -9,10 +8,9 @@ import {
   ShieldCheck,
   UserRound,
   Users,
-  X,
 } from "lucide-react";
 import { supabase } from "../../../services/supabase/client";
-import { useAuth } from "../../../context/AuthContext";
+import { useAuth } from "../../../context/useAuth";
 
 function AdminUsers() {
   const { user } = useAuth();
@@ -27,38 +25,57 @@ function AdminUsers() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const loadUsers = async () => {
-    setLoading(true);
-    setErrorMessage("");
-
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(
-          "id, full_name, role, created_at, updated_at"
-        )
-        .order("created_at", {
-          ascending: false,
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      setUsers(data ?? []);
-    } catch (error) {
-      console.error("Error loading users:", error);
-
-      setErrorMessage(
-        error.message || "Unable to load users."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    let cancelled = false;
+
+    const loadUsers = async () => {
+      setErrorMessage("");
+
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select(
+            "id, full_name, role, created_at, updated_at"
+          )
+          .order("created_at", {
+            ascending: false,
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setUsers(data ?? []);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          "Error loading users:",
+          error
+        );
+
+        setErrorMessage(
+          error.message ||
+            "Unable to load users."
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
     loadUsers();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredUsers = useMemo(() => {
@@ -67,8 +84,12 @@ function AdminUsers() {
     return users.filter((profile) => {
       const matchesSearch =
         !search ||
-        profile.full_name?.toLowerCase().includes(search) ||
-        profile.id?.toLowerCase().includes(search);
+        profile.full_name
+          ?.toLowerCase()
+          .includes(search) ||
+        profile.id
+          ?.toLowerCase()
+          .includes(search);
 
       const matchesRole =
         roleFilter === "all" ||
@@ -94,7 +115,10 @@ function AdminUsers() {
     [users]
   );
 
-  const handleRoleChange = async (profile, newRole) => {
+  const handleRoleChange = async (
+    profile,
+    newRole
+  ) => {
     setErrorMessage("");
     setSuccessMessage("");
 
@@ -160,17 +184,23 @@ function AdminUsers() {
             ? {
                 ...item,
                 role: newRole,
-                updated_at: new Date().toISOString(),
+                updated_at:
+                  new Date().toISOString(),
               }
             : item
         )
       );
 
       setSuccessMessage(
-        `${profile.full_name || "User"} is now a ${roleLabel.toLowerCase()}.`
+        `${
+          profile.full_name || "User"
+        } is now a ${roleLabel.toLowerCase()}.`
       );
     } catch (error) {
-      console.error("Error updating role:", error);
+      console.error(
+        "Error updating role:",
+        error
+      );
 
       setErrorMessage(
         error.message ||
@@ -207,7 +237,10 @@ function AdminUsers() {
                 role="alert"
                 className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
               >
-                <AlertCircle className="shrink-0" size={18} />
+                <AlertCircle
+                  className="shrink-0"
+                  size={18}
+                />
                 <span>{errorMessage}</span>
               </div>
             )}
@@ -217,7 +250,10 @@ function AdminUsers() {
                 role="status"
                 className="flex gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800"
               >
-                <Check className="shrink-0" size={18} />
+                <Check
+                  className="shrink-0"
+                  size={18}
+                />
                 <span>{successMessage}</span>
               </div>
             )}
@@ -297,8 +333,12 @@ function AdminUsers() {
                   className="w-full appearance-none rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 pr-10 text-sm outline-none focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                 >
                   <option value="all">All Roles</option>
-                  <option value="renter">Renters</option>
-                  <option value="agent">Agents</option>
+                  <option value="renter">
+                    Renters
+                  </option>
+                  <option value="agent">
+                    Agents
+                  </option>
                   <option value="admin">
                     Administrators
                   </option>
@@ -321,7 +361,10 @@ function AdminUsers() {
 
             <p className="mt-1 text-sm text-[#756970]">
               {filteredUsers.length} user
-              {filteredUsers.length === 1 ? "" : "s"} shown
+              {filteredUsers.length === 1
+                ? ""
+                : "s"}{" "}
+              shown
             </p>
           </div>
 
@@ -356,12 +399,15 @@ function AdminUsers() {
                       <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wide text-[#756970]">
                         User
                       </th>
+
                       <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wide text-[#756970]">
                         Role
                       </th>
+
                       <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wide text-[#756970]">
                         Created
                       </th>
+
                       <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wide text-[#756970]">
                         Management
                       </th>
@@ -397,7 +443,8 @@ function AdminUsers() {
                                   {profile.id}
                                 </p>
 
-                                {profile.id === user?.id && (
+                                {profile.id ===
+                                  user?.id && (
                                   <span className="mt-1 block text-xs font-semibold text-[#7A1F3D]">
                                     Your account
                                   </span>
@@ -407,11 +454,15 @@ function AdminUsers() {
                           </td>
 
                           <td className="px-6 py-5">
-                            <RoleBadge role={profile.role} />
+                            <RoleBadge
+                              role={profile.role}
+                            />
                           </td>
 
                           <td className="px-6 py-5 text-sm text-[#756970]">
-                            {formatDate(profile.created_at)}
+                            {formatDate(
+                              profile.created_at
+                            )}
                           </td>
 
                           <td className="px-6 py-5 text-right">
@@ -436,6 +487,7 @@ function AdminUsers() {
                                   <option value="renter">
                                     Renter
                                   </option>
+
                                   <option value="agent">
                                     Agent
                                   </option>
@@ -491,7 +543,9 @@ function AdminUsers() {
                           </p>
 
                           <div className="mt-3">
-                            <RoleBadge role={profile.role} />
+                            <RoleBadge
+                              role={profile.role}
+                            />
                           </div>
                         </div>
                       </div>
@@ -502,7 +556,9 @@ function AdminUsers() {
                         </p>
 
                         <p className="mt-1 text-sm text-[#24171C]">
-                          {formatDate(profile.created_at)}
+                          {formatDate(
+                            profile.created_at
+                          )}
                         </p>
                       </div>
 
@@ -526,6 +582,7 @@ function AdminUsers() {
                             <option value="renter">
                               Renter
                             </option>
+
                             <option value="agent">
                               Agent
                             </option>
@@ -628,4 +685,3 @@ function formatDate(value) {
 }
 
 export default AdminUsers;
-

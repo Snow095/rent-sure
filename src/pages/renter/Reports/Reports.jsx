@@ -1,18 +1,19 @@
-
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlertCircle,
-  ArrowLeft,
-  ArrowRight,
-  CalendarDays,
-  FileWarning,
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  FileText,
+  Flag,
+  Home,
   Loader2,
-  MapPin,
+  MessageSquare,
   ShieldCheck,
+  XCircle,
 } from "lucide-react";
 
-import { useAuth } from "../../../context/AuthContext";
+import { useAuth } from "../../../context/useAuth";
 import { supabase } from "../../../services/supabase/client";
 
 function Reports() {
@@ -21,41 +22,57 @@ function Reports() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [filter, setFilter] = useState("all");
 
   useEffect(() => {
-    const fetchReports = async () => {
-      if (!user?.id) {
-        setLoading(false);
+    let cancelled = false;
+
+    const loadReports = async () => {
+      if (!user) {
+        if (!cancelled) {
+          setReports([]);
+          setLoading(false);
+        }
         return;
       }
 
-      setLoading(true);
-      setErrorMessage("");
+      if (!cancelled) {
+        setLoading(true);
+        setErrorMessage("");
+      }
 
       const { data, error } = await supabase
         .from("reports")
-        .select(`
-          id,
-          category,
-          description,
-          severity,
-          status,
-          admin_notes,
-          created_at,
-          property_id,
-          properties (
+        .select(
+          `
             id,
-            title,
-            location
-          )
-        `)
+            property_id,
+            reason,
+            description,
+            status,
+            admin_notes,
+            created_at,
+            updated_at,
+            properties (
+              id,
+              title,
+              location,
+              property_type,
+              verification_status,
+              risk_score,
+              property_status
+            )
+          `
+        )
         .eq("reporter_id", user.id)
         .order("created_at", { ascending: false });
 
+      if (cancelled) return;
+
       if (error) {
-        console.error("Error loading reports:", error);
+        console.error("Error fetching renter reports:", error);
         setErrorMessage(
-          "We couldn't load your reports. Please try again later."
+          "We couldn't load your reports right now. Please try again."
         );
         setReports([]);
       } else {
@@ -65,303 +82,601 @@ function Reports() {
       setLoading(false);
     };
 
-    fetchReports();
-  }, [user?.id]);
+    loadReports();
 
-  const formatDate = (date) => {
-    if (!date) return "Date unavailable";
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
-    return new Date(date).toLocaleDateString("en-NG", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+  const fetchReports = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    setErrorMessage("");
+
+    const { data, error } = await supabase
+      .from("reports")
+      .select(
+        `
+          id,
+          property_id,
+          reason,
+          description,
+          status,
+          admin_notes,
+          created_at,
+          updated_at,
+          properties (
+            id,
+            title,
+            location,
+            property_type,
+            verification_status,
+            risk_score,
+            property_status
+          )
+        `
+      )
+      .eq("reporter_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching renter reports:", error);
+      setErrorMessage(
+        "We couldn't load your reports right now. Please try again."
+      );
+      setReports([]);
+    } else {
+      setReports(data || []);
+    }
+
+    setLoading(false);
   };
 
-  const getStatusDetails = (status) => {
-    switch (status) {
-      case "under_review":
-        return {
-          label: "Under Review",
-          className: "bg-[#FFF7E6] text-[#B45309]",
-        };
+  const filteredReports = useMemo(() => {
+    if (filter === "all") return reports;
 
+    return reports.filter((report) => report.status === filter);
+  }, [reports, filter]);
+
+  const statusCounts = useMemo(() => {
+    return {
+      all: reports.length,
+      under_review: reports.filter(
+        (report) => report.status === "under_review"
+      ).length,
+      resolved: reports.filter((report) => report.status === "resolved")
+        .length,
+      dismissed: reports.filter((report) => report.status === "dismissed")
+        .length,
+    };
+  }, [reports]);
+
+  const getStatusConfig = (status) => {
+    switch (status) {
       case "resolved":
         return {
           label: "Resolved",
-          className: "bg-[#E8F5EC] text-[#15803D]",
+          icon: CheckCircle2,
+          badge: "bg-green-50 text-green-700 border border-green-200",
+          iconClass: "text-green-600",
         };
 
       case "dismissed":
         return {
           label: "Dismissed",
-          className: "bg-[#F3F4F6] text-[#4B5563]",
+          icon: XCircle,
+          badge: "bg-gray-100 text-gray-700 border border-gray-200",
+          iconClass: "text-gray-500",
         };
 
+      case "under_review":
       default:
         return {
           label: "Under Review",
-          className: "bg-[#FFF7E6] text-[#B45309]",
+          icon: Clock3,
+          badge: "bg-amber-50 text-amber-700 border border-amber-200",
+          iconClass: "text-amber-600",
         };
     }
   };
 
-  const getSeverityDetails = (severity) => {
-    switch (severity) {
-      case "high":
-        return {
-          label: "High",
-          className: "bg-[#FEF2F2] text-[#B91C1C]",
-        };
-
-      case "low":
-        return {
-          label: "Low",
-          className: "bg-[#F3F4F6] text-[#4B5563]",
-        };
-
-      default:
-        return {
-          label: "Medium",
-          className: "bg-[#FFF7E6] text-[#B45309]",
-        };
+  const getRiskLabel = (riskScore) => {
+    if (riskScore === null || riskScore === undefined) {
+      return {
+        label: "Not scored",
+        className: "text-gray-600",
+      };
     }
+
+    if (riskScore >= 60) {
+      return {
+        label: "High risk",
+        className: "text-red-700",
+      };
+    }
+
+    if (riskScore >= 30) {
+      return {
+        label: "Moderate risk",
+        className: "text-amber-700",
+      };
+    }
+
+    return {
+      label: "Low risk",
+      className: "text-green-700",
+    };
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "—";
+
+    return new Date(dateString).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const formatReason = (reason) => {
+    if (!reason) return "Property concern";
+
+    return reason
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
   };
 
   return (
     <main className="min-h-screen bg-[#FAF8F9]">
-      {/* Header */}
-      <section className="border-b border-[#E8DDE1] bg-white">
-        <div className="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 sm:py-12 lg:px-10 lg:py-14 xl:px-12">
-          <Link
-            to="/renter/dashboard"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-[#7A1F3D] hover:underline"
-          >
-            <ArrowLeft size={16} />
-            Back to Dashboard
-          </Link>
-
-          <div className="mt-7 max-w-3xl">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#F8EDEF]">
-                <FileWarning
-                  size={23}
-                  className="text-[#7A1F3D]"
-                />
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+        {/* Page Header */}
+        <section className="mb-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[#7A1F3D]">
+                <FileText className="h-4 w-4" />
+                <span>Renter account</span>
               </div>
 
-              <div>
-                <p className="text-sm font-semibold text-[#7A1F3D]">
-                  Safety Reports
-                </p>
+              <h1 className="text-2xl font-bold tracking-tight text-[#24171C] sm:text-3xl">
+                My Reports
+              </h1>
 
-                <h1 className="mt-1 text-3xl font-bold tracking-tight text-[#24171C] sm:text-4xl">
-                  My Reports
-                </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756970] sm:text-base">
+                Review the property concerns you have submitted and monitor
+                their current status.
+              </p>
+            </div>
+
+            <Link
+              to="/properties"
+              className="inline-flex w-fit items-center justify-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#4A1025]"
+            >
+              <Flag className="h-4 w-4" />
+              Report a Property
+            </Link>
+          </div>
+        </section>
+
+        {/* Summary Cards */}
+        <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="rounded-xl border border-[#E8DDE1] bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium text-[#756970]">
+                Total Reports
+              </span>
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#F8EDEF]">
+                <FileText className="h-4 w-4 text-[#7A1F3D]" />
               </div>
             </div>
 
-            <p className="mt-5 text-sm leading-7 text-[#756970] sm:text-base">
-              Review the rental concerns you have reported to RentSure and
-              keep track of their review status.
+            <p className="text-2xl font-bold text-[#24171C]">
+              {statusCounts.all}
             </p>
           </div>
-        </div>
-      </section>
 
-      {/* Content */}
-      <section className="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 sm:py-12 lg:px-10 lg:py-14 xl:px-12">
+          <div className="rounded-xl border border-[#E8DDE1] bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium text-[#756970]">
+                Under Review
+              </span>
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50">
+                <Clock3 className="h-4 w-4 text-amber-600" />
+              </div>
+            </div>
+
+            <p className="text-2xl font-bold text-[#24171C]">
+              {statusCounts.under_review}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[#E8DDE1] bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium text-[#756970]">
+                Resolved
+              </span>
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-50">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+              </div>
+            </div>
+
+            <p className="text-2xl font-bold text-[#24171C]">
+              {statusCounts.resolved}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[#E8DDE1] bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium text-[#756970]">
+                Dismissed
+              </span>
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100">
+                <XCircle className="h-4 w-4 text-gray-500" />
+              </div>
+            </div>
+
+            <p className="text-2xl font-bold text-[#24171C]">
+              {statusCounts.dismissed}
+            </p>
+          </div>
+        </section>
+
         {/* Safety Notice */}
-        <div className="mb-8 rounded-2xl border border-[#E8DDE1] bg-white p-5 sm:p-6">
+        <section className="mb-8 rounded-xl border border-[#E8DDE1] bg-white p-5 shadow-sm sm:p-6">
           <div className="flex gap-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#F8EDEF]">
-              <ShieldCheck
-                size={20}
-                className="text-[#7A1F3D]"
-              />
+              <ShieldCheck className="h-5 w-5 text-[#7A1F3D]" />
             </div>
 
             <div>
-              <h2 className="text-sm font-bold text-[#24171C]">
-                Why reporting matters
+              <h2 className="text-sm font-semibold text-[#24171C]">
+                Why reports matter
               </h2>
 
-              <p className="mt-2 text-sm leading-6 text-[#756970]">
-                Your reports can help RentSure identify suspicious listings,
-                payment concerns, and other potential safety issues. Reports
-                are reviewed as part of the platform's safety process and are
-                not a guarantee that every reported issue will be confirmed.
+              <p className="mt-1 text-sm leading-6 text-[#756970]">
+                Your reports help RentSure identify properties that may need
+                additional review. A report is an alert for investigation and
+                does not by itself establish that a property or person has
+                acted fraudulently.
               </p>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Error */}
-        {errorMessage && (
-          <div className="mb-8 flex gap-3 rounded-xl border border-[#F1CACA] bg-[#FEF2F2] px-5 py-4">
-            <AlertCircle
-              size={20}
-              className="mt-0.5 shrink-0 text-[#B91C1C]"
-            />
+        {/* Filters */}
+        <section className="mb-6">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: "all", label: "All Reports" },
+              { value: "under_review", label: "Under Review" },
+              { value: "resolved", label: "Resolved" },
+              { value: "dismissed", label: "Dismissed" },
+            ].map((item) => {
+              const active = filter === item.value;
 
-            <p className="text-sm leading-6 text-[#B91C1C]">
-              {errorMessage}
-            </p>
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setFilter(item.value)}
+                  className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+                    active
+                      ? "bg-[#7A1F3D] text-white"
+                      : "border border-[#E8DDE1] bg-white text-[#756970] hover:bg-[#F8EDEF] hover:text-[#7A1F3D]"
+                  }`}
+                >
+                  {item.label}
+                  <span
+                    className={`ml-2 ${
+                      active ? "text-white/80" : "text-[#9A8D93]"
+                    }`}
+                  >
+                    {statusCounts[item.value]}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        )}
+        </section>
 
         {/* Loading */}
         {loading && (
-          <div className="rounded-2xl border border-[#E8DDE1] bg-white px-6 py-16 text-center">
-            <Loader2
-              size={30}
-              className="mx-auto animate-spin text-[#7A1F3D]"
-            />
+          <div className="flex min-h-64 items-center justify-center rounded-xl border border-[#E8DDE1] bg-white">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <Loader2 className="h-7 w-7 animate-spin text-[#7A1F3D]" />
 
-            <p className="mt-4 text-sm font-medium text-[#756970]">
-              Loading your reports...
-            </p>
+              <p className="text-sm text-[#756970]">
+                Loading your reports...
+              </p>
+            </div>
           </div>
         )}
 
-        {/* Empty */}
+        {/* Error */}
+        {!loading && errorMessage && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+            <div className="flex gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+
+              <div>
+                <h2 className="text-sm font-semibold text-red-800">
+                  Unable to load reports
+                </h2>
+
+                <p className="mt-1 text-sm leading-6 text-red-700">
+                  {errorMessage}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={fetchReports}
+                  className="mt-4 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-red-700 shadow-sm ring-1 ring-inset ring-red-200 transition hover:bg-red-100"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Empty State */}
         {!loading && !errorMessage && reports.length === 0 && (
-          <div className="rounded-2xl border border-[#E8DDE1] bg-white px-6 py-16 text-center">
+          <div className="rounded-xl border border-[#E8DDE1] bg-white px-6 py-14 text-center shadow-sm">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#F8EDEF]">
-              <FileWarning
-                size={25}
-                className="text-[#7A1F3D]"
-              />
+              <Flag className="h-6 w-6 text-[#7A1F3D]" />
             </div>
 
-            <h2 className="mt-5 text-xl font-bold text-[#24171C]">
+            <h2 className="mt-5 text-lg font-bold text-[#24171C]">
               No reports yet
             </h2>
 
-            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#756970]">
-              You haven't submitted any safety reports. If you encounter a
-              suspicious listing or payment request, you can report it from
-              the relevant property page.
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#756970]">
+              If you encounter a property that appears suspicious or raises
+              a safety concern, you can submit a report for review.
             </p>
 
             <Link
               to="/properties"
-              className="mt-7 inline-flex items-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
             >
               Browse Properties
-              <ArrowRight size={17} />
             </Link>
           </div>
         )}
 
-        {/* Reports */}
-        {!loading && reports.length > 0 && (
-          <div className="space-y-5">
-            {reports.map((report) => {
-              const status = getStatusDetails(report.status);
-              const severity = getSeverityDetails(report.severity);
+        {/* No Matching Reports */}
+        {!loading &&
+          !errorMessage &&
+          reports.length > 0 &&
+          filteredReports.length === 0 && (
+            <div className="rounded-xl border border-[#E8DDE1] bg-white px-6 py-14 text-center shadow-sm">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#F8EDEF]">
+                <FileText className="h-6 w-6 text-[#7A1F3D]" />
+              </div>
+
+              <h2 className="mt-5 text-lg font-bold text-[#24171C]">
+                No matching reports
+              </h2>
+
+              <p className="mt-2 text-sm text-[#756970]">
+                There are no reports with the selected status.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setFilter("all")}
+                className="mt-5 rounded-lg border border-[#E8DDE1] px-4 py-2.5 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF]"
+              >
+                View All Reports
+              </button>
+            </div>
+          )}
+
+        {/* Reports List */}
+        {!loading && !errorMessage && filteredReports.length > 0 && (
+          <section className="space-y-5">
+            {filteredReports.map((report) => {
+              const status = getStatusConfig(report.status);
+              const StatusIcon = status.icon;
+              const property = report.properties;
+              const risk = getRiskLabel(property?.risk_score);
 
               return (
                 <article
                   key={report.id}
-                  className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-7"
+                  className="overflow-hidden rounded-xl border border-[#E8DDE1] bg-white shadow-sm"
                 >
-                  {/* Top */}
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-[#F8EDEF] px-3 py-1 text-xs font-semibold text-[#7A1F3D]">
-                          {report.category}
-                        </span>
+                  <div className="p-5 sm:p-6">
+                    {/* Report Header */}
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#F8EDEF]">
+                          <Flag className="h-5 w-5 text-[#7A1F3D]" />
+                        </div>
 
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${severity.className}`}
-                        >
-                          {severity.label} Severity
-                        </span>
-
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${status.className}`}
-                        >
-                          {status.label}
-                        </span>
-                      </div>
-
-                      <h2 className="mt-4 text-lg font-bold text-[#24171C]">
-                        Report #{report.id}
-                      </h2>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-sm text-[#756970]">
-                      <CalendarDays size={16} />
-                      {formatDate(report.created_at)}
-                    </div>
-                  </div>
-
-                  {/* Property */}
-                  {report.properties && (
-                    <div className="mt-6 rounded-xl bg-[#FAF8F9] p-5">
-                      <div className="flex items-start gap-3">
-                        <MapPin
-                          size={19}
-                          className="mt-0.5 shrink-0 text-[#7A1F3D]"
-                        />
-
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-[#24171C]">
-                            {report.properties.title}
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-[#9A8D93]">
+                            Report submitted
                           </p>
 
-                          <p className="mt-1 text-sm text-[#756970]">
-                            {report.properties.location}
+                          <p className="mt-1 text-sm font-semibold text-[#24171C]">
+                            {formatDate(report.created_at)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${status.badge}`}
+                      >
+                        <StatusIcon
+                          className={`h-3.5 w-3.5 ${status.iconClass}`}
+                        />
+                        {status.label}
+                      </div>
+                    </div>
+
+                    {/* Property */}
+                    <div className="mt-6 rounded-xl border border-[#E8DDE1] bg-[#FAF8F9] p-4 sm:p-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white">
+                            <Home className="h-5 w-5 text-[#7A1F3D]" />
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-medium text-[#756970]">
+                              Property
+                            </p>
+
+                            <h2 className="mt-1 text-base font-bold text-[#24171C]">
+                              {property?.title || "Property unavailable"}
+                            </h2>
+
+                            {property?.location && (
+                              <p className="mt-1 text-sm text-[#756970]">
+                                {property.location}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {property?.id && (
+                          <Link
+                            to={`/properties/${property.id}`}
+                            className="inline-flex w-fit items-center justify-center rounded-lg border border-[#E8DDE1] bg-white px-4 py-2.5 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF]"
+                          >
+                            View Property
+                          </Link>
+                        )}
+                      </div>
+
+                      <div className="mt-4 grid gap-3 border-t border-[#E8DDE1] pt-4 sm:grid-cols-3">
+                        <div>
+                          <p className="text-xs text-[#756970]">
+                            Report reason
+                          </p>
+
+                          <p className="mt-1 text-sm font-semibold text-[#24171C]">
+                            {formatReason(report.reason)}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-[#756970]">
+                            Verification
+                          </p>
+
+                          <p className="mt-1 text-sm font-semibold capitalize text-[#24171C]">
+                            {property?.verification_status
+                              ? property.verification_status.replace(
+                                  /_/g,
+                                  " "
+                                )
+                              : "Unknown"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-[#756970]">
+                            Risk assessment
+                          </p>
+
+                          <p
+                            className={`mt-1 text-sm font-semibold ${risk.className}`}
+                          >
+                            {risk.label}
                           </p>
                         </div>
                       </div>
                     </div>
-                  )}
 
-                  {/* Description */}
-                  <div className="mt-6">
-                    <p className="text-xs font-bold uppercase tracking-wide text-[#756970]">
-                      Your Report
-                    </p>
+                    {/* Report Description */}
+                    <div className="mt-6">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4 text-[#7A1F3D]" />
 
-                    <p className="mt-2 text-sm leading-7 text-[#24171C]">
-                      {report.description}
-                    </p>
+                        <h3 className="text-sm font-semibold text-[#24171C]">
+                          Your report
+                        </h3>
+                      </div>
+
+                      <div className="mt-3 rounded-lg border border-[#E8DDE1] bg-white p-4">
+                        <p className="whitespace-pre-wrap text-sm leading-6 text-[#756970]">
+                          {report.description ||
+                            "No additional description provided."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Admin Notes */}
+                    {report.admin_notes && (
+                      <div className="mt-5 rounded-lg border border-[#E8DDE1] bg-[#F8EDEF] p-4">
+                        <div className="flex gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white">
+                            <ShieldCheck className="h-4 w-4 text-[#7A1F3D]" />
+                          </div>
+
+                          <div>
+                            <h3 className="text-sm font-semibold text-[#24171C]">
+                              Review update
+                            </h3>
+
+                            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#756970]">
+                              {report.admin_notes}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Footer */}
+                    <div className="mt-6 flex flex-col gap-3 border-t border-[#E8DDE1] pt-5 text-xs text-[#756970] sm:flex-row sm:items-center sm:justify-between">
+                      <p>
+                        Last updated: {formatDate(report.updated_at)}
+                      </p>
+
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-3.5 w-3.5 text-[#B45309]" />
+
+                        <span>
+                          Reports are reviewed based on available
+                          information.
+                        </span>
+                      </div>
+                    </div>
                   </div>
-
-                  {/* Admin Notes */}
-                  {report.admin_notes && (
-                    <div className="mt-6 rounded-xl border border-[#E8DDE1] bg-[#F8EDEF] p-5">
-                      <p className="text-xs font-bold uppercase tracking-wide text-[#7A1F3D]">
-                        RentSure Review Note
-                      </p>
-
-                      <p className="mt-2 text-sm leading-6 text-[#4A1025]">
-                        {report.admin_notes}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Property Link */}
-                  {report.property_id && (
-                    <div className="mt-6 border-t border-[#E8DDE1] pt-5">
-                      <Link
-                        to={`/properties/${report.property_id}`}
-                        className="inline-flex items-center gap-2 text-sm font-semibold text-[#7A1F3D] hover:underline"
-                      >
-                        View Property
-                        <ArrowRight size={16} />
-                      </Link>
-                    </div>
-                  )}
                 </article>
               );
             })}
-          </div>
+          </section>
         )}
-      </section>
+
+        {/* Bottom Disclaimer */}
+        <section className="mt-8 rounded-xl border border-[#E8DDE1] bg-white p-5 sm:p-6">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#B45309]" />
+
+            <div>
+              <h2 className="text-sm font-semibold text-[#24171C]">
+                Important
+              </h2>
+
+              <p className="mt-1 text-sm leading-6 text-[#756970]">
+                RentSure provides verification and risk-awareness tools to
+                support informed rental decisions. A report, verification
+                status, or risk score should not be treated as a guarantee of
+                legal ownership, authenticity, or future conduct.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

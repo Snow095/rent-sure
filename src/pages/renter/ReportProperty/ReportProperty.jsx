@@ -2,171 +2,243 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  AlertCircle,
   AlertTriangle,
   ArrowLeft,
-  ArrowRight,
-  FileWarning,
+  Flag,
+  Home,
   Loader2,
   MapPin,
   ShieldCheck,
 } from "lucide-react";
 
-import { useAuth } from "../../../context/AuthContext";
+import { useAuth } from "../../../context/useAuth";
 import { supabase } from "../../../services/supabase/client";
 
+const REPORT_REASONS = [
+  {
+    value: "suspected_scam",
+    label: "Suspected scam",
+  },
+  {
+    value: "fake_listing",
+    label: "Fake or misleading listing",
+  },
+  {
+    value: "payment_request",
+    label: "Suspicious payment request",
+  },
+  {
+    value: "false_information",
+    label: "False property information",
+  },
+  {
+    value: "agent_concern",
+    label: "Concern about the agent",
+  },
+  {
+    value: "duplicate_listing",
+    label: "Duplicate listing",
+  },
+  {
+    value: "other",
+    label: "Other concern",
+  },
+];
+
 function ReportProperty() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [property, setProperty] = useState(null);
-
-  const [formData, setFormData] = useState({
-    category: "",
-    severity: "medium",
-    description: "",
-  });
-
-  const [loadingProperty, setLoadingProperty] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
 
-  const categories = [
-    "Suspicious Payment Request",
-    "Suspicious Listing",
-    "Property Information",
-    "Payment Concern",
-    "Agent Conduct",
-    "Other",
-  ];
+  const [reason, setReason] = useState("");
+  const [description, setDescription] = useState("");
+
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     const fetchProperty = async () => {
-      if (!id) {
-        setErrorMessage("Property could not be identified.");
-        setLoadingProperty(false);
-        return;
-      }
+      setLoading(true);
+      setErrorMessage("");
 
       const { data, error } = await supabase
         .from("properties")
-        .select(`
-          id,
-          title,
-          location,
-          property_type,
-          annual_rent,
-          verification_status
-        `)
+        .select(
+          `
+            id,
+            title,
+            location,
+            property_type,
+            verification_status,
+            risk_score,
+            property_status
+          `
+        )
         .eq("id", id)
         .eq("property_status", "active")
-        .single();
+        .maybeSingle();
 
       if (error) {
-        console.error("Error loading property:", error);
+        console.error("Error fetching property:", error);
         setErrorMessage(
-          "We couldn't load this property. It may no longer be available."
+          "We couldn't load this property. Please try again."
+        );
+        setProperty(null);
+      } else if (!data) {
+        setErrorMessage(
+          "This property is unavailable or is no longer active."
         );
         setProperty(null);
       } else {
         setProperty(data);
       }
 
-      setLoadingProperty(false);
+      setLoading(false);
     };
 
     fetchProperty();
   }, [id]);
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-
-    setFormData((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
-
-    setErrorMessage("");
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
 
     setErrorMessage("");
+    setSuccessMessage("");
 
-    if (!user?.id) {
+    if (!user) {
       navigate("/login", {
         state: {
-          from: `/properties/${id}/report`,
+          from: {
+            pathname: `/properties/${id}/report`,
+          },
         },
       });
+
       return;
     }
 
-    if (!formData.category) {
-      setErrorMessage("Please select a report category.");
+    if (!reason) {
+      setErrorMessage("Please select a reason for your report.");
       return;
     }
 
-    if (!formData.description.trim()) {
-      setErrorMessage("Please describe the issue you want to report.");
-      return;
-    }
-
-    if (formData.description.trim().length < 20) {
+    if (description.trim().length < 20) {
       setErrorMessage(
-        "Please provide a little more detail about the issue."
+        "Please provide at least 20 characters describing your concern."
+      );
+      return;
+    }
+
+    if (description.trim().length > 2000) {
+      setErrorMessage(
+        "Your description cannot be longer than 2,000 characters."
       );
       return;
     }
 
     setSubmitting(true);
 
-    const { error } = await supabase
-      .from("reports")
-      .insert({
-        reporter_id: user.id,
-        property_id: Number(id),
-        category: formData.category,
-        description: formData.description.trim(),
-        severity: formData.severity,
-        status: "under_review",
-      });
-
-    setSubmitting(false);
+    const { error } = await supabase.from("reports").insert({
+      property_id: property.id,
+      reporter_id: user.id,
+      reason,
+      description: description.trim(),
+      status: "under_review",
+    });
 
     if (error) {
       console.error("Error submitting report:", error);
-      setErrorMessage(
-        "We couldn't submit your report. Please try again."
-      );
+
+      if (error.code === "23505") {
+        setErrorMessage(
+          "You have already submitted a report for this property."
+        );
+      } else {
+        setErrorMessage(
+          "We couldn't submit your report. Please try again."
+        );
+      }
+
+      setSubmitting(false);
       return;
     }
 
-    navigate("/renter/reports");
+    setSuccessMessage(
+      "Your report has been submitted and is now under review."
+    );
+
+    setReason("");
+    setDescription("");
+    setSubmitting(false);
+
+    setTimeout(() => {
+      navigate("/renter/reports", { replace: true });
+    }, 1600);
   };
 
-  const formatAmount = (amount) => {
-    if (amount === null || amount === undefined) {
-      return "Rent unavailable";
+  const getVerificationLabel = (status) => {
+    switch (status) {
+      case "verified":
+        return "Verified";
+
+      case "pending":
+        return "Awaiting review";
+
+      case "needs_information":
+        return "More information needed";
+
+      case "rejected":
+        return "Rejected";
+
+      default:
+        return "Not verified";
+    }
+  };
+
+  const getRiskLabel = (riskScore) => {
+    if (riskScore === null || riskScore === undefined) {
+      return {
+        label: "Not scored yet",
+        className: "text-[#756970]",
+      };
     }
 
-    return `₦${Number(amount).toLocaleString("en-NG")}/year`;
+    if (riskScore >= 60) {
+      return {
+        label: "High risk",
+        className: "text-[#B91C1C]",
+      };
+    }
+
+    if (riskScore >= 30) {
+      return {
+        label: "Moderate risk",
+        className: "text-[#B45309]",
+      };
+    }
+
+    return {
+      label: "Low risk",
+      className: "text-[#15803D]",
+    };
   };
 
-  if (loadingProperty) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#FAF8F9] px-5">
-        <div className="text-center">
-          <Loader2
-            size={32}
-            className="mx-auto animate-spin text-[#7A1F3D]"
-          />
+  const risk = getRiskLabel(property?.risk_score);
 
-          <p className="mt-4 text-sm font-medium text-[#756970]">
-            Loading property information...
-          </p>
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#FAF8F9]">
+        <div className="mx-auto flex min-h-[70vh] max-w-7xl items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-[#7A1F3D]" />
+            <p className="text-sm text-[#756970]">
+              Loading property information...
+            </p>
+          </div>
         </div>
       </main>
     );
@@ -174,30 +246,40 @@ function ReportProperty() {
 
   if (!property) {
     return (
-      <main className="min-h-screen bg-[#FAF8F9] px-5 py-16 sm:px-8">
-        <div className="mx-auto max-w-lg rounded-2xl border border-[#E8DDE1] bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#FEF2F2]">
-            <AlertCircle
-              size={26}
-              className="text-[#B91C1C]"
-            />
+      <main className="min-h-screen bg-[#FAF8F9]">
+        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="rounded-xl border border-[#E8DDE1] bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
+              <AlertTriangle className="h-7 w-7 text-[#B91C1C]" />
+            </div>
+
+            <h1 className="mt-5 text-xl font-bold text-[#24171C]">
+              Property unavailable
+            </h1>
+
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#756970]">
+              {errorMessage ||
+                "This property could not be found or is no longer active."}
+            </p>
+
+            <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#E8DDE1] bg-white px-5 py-3 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF]"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Go Back
+              </button>
+
+              <Link
+                to="/properties"
+                className="inline-flex items-center justify-center rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
+              >
+                Browse Properties
+              </Link>
+            </div>
           </div>
-
-          <h1 className="mt-5 text-2xl font-bold text-[#24171C]">
-            Property unavailable
-          </h1>
-
-          <p className="mt-3 text-sm leading-6 text-[#756970]">
-            We couldn't find this active property listing.
-          </p>
-
-          <Link
-            to="/properties"
-            className="mt-7 inline-flex items-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025]"
-          >
-            Browse Properties
-            <ArrowRight size={17} />
-          </Link>
         </div>
       </main>
     );
@@ -205,261 +287,312 @@ function ReportProperty() {
 
   return (
     <main className="min-h-screen bg-[#FAF8F9]">
-      {/* Header */}
-      <section className="border-b border-[#E8DDE1] bg-white">
-        <div className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8 sm:py-12 lg:px-10 lg:py-14">
-          <Link
-            to={`/properties/${property.id}`}
-            className="inline-flex items-center gap-2 text-sm font-semibold text-[#7A1F3D] hover:underline"
-          >
-            <ArrowLeft size={16} />
-            Back to Property
-          </Link>
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
 
-          <div className="mt-7 flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#F8EDEF]">
-              <FileWarning
-                size={23}
-                className="text-[#7A1F3D]"
-              />
-            </div>
+        {/* Back Link */}
+        <Link
+          to={`/properties/${property.id}`}
+          className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-[#7A1F3D] transition hover:text-[#4A1025]"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Property
+        </Link>
 
-            <div>
-              <p className="text-sm font-semibold text-[#7A1F3D]">
-                Safety Report
-              </p>
-
-              <h1 className="mt-1 text-3xl font-bold tracking-tight text-[#24171C] sm:text-4xl">
-                Report a Concern
-              </h1>
-            </div>
+        {/* Header */}
+        <section className="mb-8">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#F8EDEF]">
+            <Flag className="h-6 w-6 text-[#7A1F3D]" />
           </div>
 
-          <p className="mt-5 max-w-2xl text-sm leading-7 text-[#756970] sm:text-base">
-            If something about this rental listing or your interaction with
-            the agent seems suspicious, let RentSure know so the issue can be
-            reviewed.
+          <h1 className="mt-5 text-2xl font-bold tracking-tight text-[#24171C] sm:text-3xl">
+            Report Property
+          </h1>
+
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756970] sm:text-base">
+            Tell us about a concern with this property. Your report will be
+            reviewed by the RentSure team.
           </p>
-        </div>
-      </section>
+        </section>
 
-      {/* Main */}
-      <section className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8 sm:py-12 lg:px-10 lg:py-14">
         {/* Property Summary */}
-        <div className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-7">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-[#756970]">
-                Property Being Reported
-              </p>
+        <section className="mb-8 overflow-hidden rounded-xl border border-[#E8DDE1] bg-white shadow-sm">
+          <div className="border-b border-[#E8DDE1] bg-[#FAF8F9] px-5 py-4 sm:px-6">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#756970]">
+              Property being reported
+            </p>
+          </div>
 
-              <h2 className="mt-2 text-xl font-bold text-[#24171C]">
-                {property.title}
-              </h2>
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#F8EDEF]">
+                  <Home className="h-5 w-5 text-[#7A1F3D]" />
+                </div>
 
-              <div className="mt-3 flex items-center gap-2 text-sm text-[#756970]">
-                <MapPin
-                  size={17}
-                  className="shrink-0 text-[#7A1F3D]"
-                />
-                {property.location}
+                <div>
+                  <h2 className="text-lg font-bold text-[#24171C]">
+                    {property.title}
+                  </h2>
+
+                  <div className="mt-2 flex items-start gap-2 text-sm text-[#756970]">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{property.location}</span>
+                  </div>
+
+                  {property.property_type && (
+                    <p className="mt-2 text-sm capitalize text-[#756970]">
+                      {property.property_type.replace(/_/g, " ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:items-end">
+                <span className="text-xs text-[#756970]">
+                  Verification
+                </span>
+
+                <span
+                  className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    property.verification_status === "verified"
+                      ? "border border-green-200 bg-green-50 text-green-700"
+                      : property.verification_status === "rejected"
+                      ? "border border-red-200 bg-red-50 text-red-700"
+                      : "border border-amber-200 bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {getVerificationLabel(property.verification_status)}
+                </span>
               </div>
             </div>
 
-            <div className="shrink-0">
-              <span className="rounded-full bg-[#F8EDEF] px-3 py-1.5 text-xs font-semibold text-[#7A1F3D]">
-                {property.property_type}
-              </span>
+            <div className="mt-5 grid gap-4 border-t border-[#E8DDE1] pt-5 sm:grid-cols-2">
+              <div>
+                <p className="text-xs text-[#756970]">
+                  Current risk assessment
+                </p>
 
-              <p className="mt-3 text-sm font-bold text-[#24171C] sm:text-right">
-                {formatAmount(property.annual_rent)}
-              </p>
+                <p className={`mt-1 text-sm font-semibold ${risk.className}`}>
+                  {risk.label}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs text-[#756970]">
+                  Property status
+                </p>
+
+                <p className="mt-1 text-sm font-semibold capitalize text-[#24171C]">
+                  {property.property_status?.replace(/_/g, " ") || "Active"}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Warning */}
-        <div className="mt-6 rounded-2xl border border-[#F3D8A3] bg-[#FFF9ED] p-5 sm:p-6">
+        {/* Safety Notice */}
+        <section className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-5 sm:p-6">
           <div className="flex gap-4">
-            <AlertTriangle
-              size={21}
-              className="mt-0.5 shrink-0 text-[#B45309]"
-            />
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#B45309]" />
 
             <div>
-              <h2 className="text-sm font-bold text-[#7A4A03]">
-                Please provide factual information
+              <h2 className="text-sm font-semibold text-[#24171C]">
+                Report only what you can describe accurately
               </h2>
 
-              <p className="mt-2 text-sm leading-6 text-[#8A641F]">
-                Describe what you observed or experienced. Avoid submitting
-                information you know to be false. Reports help RentSure
-                identify potential issues, but submitting a report does not
-                automatically mean that the allegation will be confirmed.
+              <p className="mt-1 text-sm leading-6 text-[#756970]">
+                A report is a request for investigation. Avoid submitting
+                information that you know to be false or misleading. RentSure
+                will assess the report using the information available to the
+                review team.
               </p>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Error */}
-        {errorMessage && (
-          <div className="mt-6 flex gap-3 rounded-xl border border-[#F1CACA] bg-[#FEF2F2] px-5 py-4">
-            <AlertCircle
-              size={20}
-              className="mt-0.5 shrink-0 text-[#B91C1C]"
-            />
-
-            <p className="text-sm leading-6 text-[#B91C1C]">
-              {errorMessage}
-            </p>
-          </div>
-        )}
-
-        {/* Form */}
-        <form
-          onSubmit={handleSubmit}
-          className="mt-8 rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-8"
-        >
-          {/* Category */}
-          <div>
-            <label
-              htmlFor="category"
-              className="text-sm font-semibold text-[#24171C]"
-            >
-              What would you like to report?
-            </label>
-
-            <select
-              id="category"
-              name="category"
-              value={formData.category}
-              onChange={handleChange}
-              className="mt-3 min-h-12 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 text-sm text-[#24171C] outline-none transition focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
-            >
-              <option value="">Select a category</option>
-
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Severity */}
-          <div className="mt-7">
-            <label
-              htmlFor="severity"
-              className="text-sm font-semibold text-[#24171C]"
-            >
-              How serious is the concern?
-            </label>
-
-            <select
-              id="severity"
-              name="severity"
-              value={formData.severity}
-              onChange={handleChange}
-              className="mt-3 min-h-12 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 text-sm text-[#24171C] outline-none transition focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-
-            <p className="mt-2 text-xs leading-5 text-[#756970]">
-              Choose the level that best represents the potential impact or
-              urgency of the issue.
-            </p>
-          </div>
-
-          {/* Description */}
-          <div className="mt-7">
-            <div className="flex items-center justify-between gap-4">
-              <label
-                htmlFor="description"
-                className="text-sm font-semibold text-[#24171C]"
-              >
-                Describe the concern
-              </label>
-
-              <span className="text-xs text-[#756970]">
-                {formData.description.length}/1000
-              </span>
-            </div>
-
-            <textarea
-              id="description"
-              name="description"
-              value={formData.description}
-              onChange={(event) => {
-                if (event.target.value.length <= 1000) {
-                  handleChange(event);
-                }
-              }}
-              rows={7}
-              placeholder="Explain what happened, what you noticed, or why you believe the listing or interaction may be unsafe..."
-              className="mt-3 w-full resize-y rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 text-sm leading-6 text-[#24171C] outline-none transition placeholder:text-[#A3979D] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
-            />
-
-            <p className="mt-2 text-xs leading-5 text-[#756970]">
-              Please provide at least 20 characters so the review team has
-              enough context to understand the concern.
-            </p>
-          </div>
-
-          {/* Submit */}
-          <div className="mt-8 border-t border-[#E8DDE1] pt-7">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4A1025] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-            >
-              {submitting ? (
-                <>
-                  <Loader2
-                    size={18}
-                    className="animate-spin"
-                  />
-                  Submitting Report...
-                </>
-              ) : (
-                <>
-                  Submit Report
-                  <ArrowRight size={17} />
-                </>
-              )}
-            </button>
-
-            <Link
-              to={`/properties/${property.id}`}
-              className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-lg border border-[#E8DDE1] px-5 py-3 text-sm font-semibold text-[#7A1F3D] transition hover:bg-[#F8EDEF] sm:ml-3 sm:mt-0 sm:w-auto"
-            >
-              Cancel
-            </Link>
-          </div>
-        </form>
-
-        {/* Bottom Trust Message */}
-        <div className="mt-8 flex gap-4 rounded-2xl bg-[#2D0A17] p-6 sm:p-7">
-          <ShieldCheck
-            size={23}
-            className="mt-0.5 shrink-0 text-[#C9A227]"
-          />
-
-          <div>
-            <h2 className="text-sm font-bold text-white">
-              Your report supports safer renting
+        {/* Report Form */}
+        <section className="rounded-xl border border-[#E8DDE1] bg-white shadow-sm">
+          <div className="border-b border-[#E8DDE1] px-5 py-5 sm:px-6">
+            <h2 className="text-lg font-bold text-[#24171C]">
+              Report details
             </h2>
 
-            <p className="mt-2 text-sm leading-6 text-[#E8DDE1]">
-              RentSure uses submitted reports as part of its broader safety
-              and review process. A report is an alert for review, not proof
-              that wrongdoing has occurred.
+            <p className="mt-1 text-sm text-[#756970]">
+              Provide enough information to help us understand your concern.
             </p>
           </div>
-        </div>
-      </section>
+
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-6 p-5 sm:p-6"
+          >
+            {/* Error */}
+            {errorMessage && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <div className="flex gap-3">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#B91C1C]" />
+
+                  <p className="text-sm leading-6 text-red-700">
+                    {errorMessage}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Success */}
+            {successMessage && (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+                <div className="flex gap-3">
+                  <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#15803D]" />
+
+                  <p className="text-sm leading-6 text-green-700">
+                    {successMessage}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Reason */}
+            <div>
+              <label
+                htmlFor="report-reason"
+                className="block text-sm font-semibold text-[#24171C]"
+              >
+                What is your concern?
+                <span className="ml-1 text-[#B91C1C]">*</span>
+              </label>
+
+              <p className="mt-1 text-xs text-[#756970]">
+                Select the option that best describes the issue.
+              </p>
+
+              <select
+                id="report-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                disabled={submitting}
+                className="mt-3 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 text-sm text-[#24171C] outline-none transition focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#7A1F3D]/10 disabled:cursor-not-allowed disabled:bg-[#FAF8F9]"
+              >
+                <option value="">Select a reason</option>
+
+                {REPORT_REASONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Description */}
+            <div>
+              <div className="flex items-end justify-between gap-3">
+                <label
+                  htmlFor="report-description"
+                  className="block text-sm font-semibold text-[#24171C]"
+                >
+                  Describe the concern
+                  <span className="ml-1 text-[#B91C1C]">*</span>
+                </label>
+
+                <span className="text-xs text-[#9A8D93]">
+                  {description.length}/2000
+                </span>
+              </div>
+
+              <p className="mt-1 text-xs text-[#756970]">
+                Include relevant details such as what happened, what you
+                noticed, or why the listing appears concerning.
+              </p>
+
+              <textarea
+                id="report-description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                disabled={submitting}
+                maxLength={2000}
+                rows={7}
+                placeholder="Describe what you noticed..."
+                className="mt-3 w-full resize-y rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 text-sm leading-6 text-[#24171C] outline-none transition placeholder:text-[#9A8D93] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#7A1F3D]/10 disabled:cursor-not-allowed disabled:bg-[#FAF8F9]"
+              />
+
+              <p className="mt-2 text-xs text-[#9A8D93]">
+                Minimum 20 characters.
+              </p>
+            </div>
+
+            {/* Submission Notice */}
+            <div className="rounded-lg border border-[#E8DDE1] bg-[#FAF8F9] p-4">
+              <div className="flex gap-3">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#7A1F3D]" />
+
+                <div>
+                  <h3 className="text-sm font-semibold text-[#24171C]">
+                    What happens after you submit?
+                  </h3>
+
+                  <p className="mt-1 text-sm leading-6 text-[#756970]">
+                    Your report will be placed under review. You can monitor
+                    its status from your Reports page. The review team may
+                    investigate the property using available verification and
+                    report information.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-col-reverse gap-3 border-t border-[#E8DDE1] pt-6 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => navigate(`/properties/${property.id}`)}
+                disabled={submitting}
+                className="rounded-lg border border-[#E8DDE1] bg-white px-5 py-3 text-sm font-semibold text-[#756970] transition hover:bg-[#FAF8F9] hover:text-[#24171C] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#7A1F3D] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#4A1025] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <Flag className="h-4 w-4" />
+                    Submit Report
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        {/* Bottom Disclaimer */}
+        <section className="mt-8 rounded-xl border border-[#E8DDE1] bg-white p-5 sm:p-6">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#B45309]" />
+
+            <div>
+              <h2 className="text-sm font-semibold text-[#24171C]">
+                Important
+              </h2>
+
+              <p className="mt-1 text-sm leading-6 text-[#756970]">
+                RentSure is a verification and fraud-awareness platform. A
+                submitted report does not automatically mean that a property,
+                agent, or listing is fraudulent. Reports are reviewed based on
+                available information.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

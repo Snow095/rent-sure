@@ -1,7 +1,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Building2,
   ChevronDown,
   Loader2,
   Search,
@@ -18,12 +17,12 @@ function AdminAgents() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState("all");
 
-  const loadAgents = async () => {
-    setLoading(true);
+  useEffect(() => {
+    let cancelled = false;
 
-    try {
-      const { data: agentData, error: agentError } =
-        await supabase
+    const loadAgents = async () => {
+      try {
+        const { data: agentData, error: agentError } = await supabase
           .from("profiles")
           .select("id, full_name, role, created_at")
           .eq("role", "agent")
@@ -31,76 +30,73 @@ function AdminAgents() {
             ascending: false,
           });
 
-      if (agentError) {
-        throw agentError;
-      }
-
-      const agentIds =
-        (agentData ?? []).map((agent) => agent.id);
-
-      let propertyData = [];
-
-      if (agentIds.length > 0) {
-        const { data, error } = await supabase
-          .from("properties")
-          .select(
-            "id, agent_id, property_status, verification_status"
-          )
-          .in("agent_id", agentIds);
-
-        if (error) {
-          throw error;
+        if (agentError) {
+          throw agentError;
         }
 
-        propertyData = data ?? [];
+        const agentIds = (agentData ?? []).map((agent) => agent.id);
+
+        let propertyData = [];
+
+        if (agentIds.length > 0) {
+          const { data, error } = await supabase
+            .from("properties")
+            .select(
+              "id, agent_id, property_status, verification_status"
+            )
+            .in("agent_id", agentIds);
+
+          if (error) {
+            throw error;
+          }
+
+          propertyData = data ?? [];
+        }
+
+        const enrichedAgents = (agentData ?? []).map((agent) => {
+          const properties = propertyData.filter(
+            (property) => property.agent_id === agent.id
+          );
+
+          return {
+            ...agent,
+            propertyCount: properties.length,
+            activeCount: properties.filter(
+              (property) => property.property_status === "active"
+            ).length,
+            verifiedCount: properties.filter(
+              (property) => property.verification_status === "verified"
+            ).length,
+            pendingCount: properties.filter(
+              (property) => property.verification_status === "pending"
+            ).length,
+            rejectedCount: properties.filter(
+              (property) => property.verification_status === "rejected"
+            ).length,
+          };
+        });
+
+        if (!cancelled) {
+          setAgents(enrichedAgents);
+        }
+      } catch (error) {
+        console.error("Error loading agents:", error);
+
+        if (!cancelled) {
+          setAgents([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
+    };
 
-      const enrichedAgents = (
-        agentData ?? []
-      ).map((agent) => {
-        const properties = propertyData.filter(
-          (property) =>
-            property.agent_id === agent.id
-        );
-
-        return {
-          ...agent,
-          propertyCount: properties.length,
-          activeCount: properties.filter(
-            (property) =>
-              property.property_status === "active"
-          ).length,
-          verifiedCount: properties.filter(
-            (property) =>
-              property.verification_status ===
-              "verified"
-          ).length,
-          pendingCount: properties.filter(
-            (property) =>
-              property.verification_status ===
-              "pending"
-          ).length,
-          rejectedCount: properties.filter(
-            (property) =>
-              property.verification_status ===
-              "rejected"
-          ).length,
-        };
-      });
-
-      setAgents(enrichedAgents);
-    } catch (error) {
-      console.error(
-        "Error loading agents:",
-        error
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
     loadAgents();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredAgents = useMemo(() => {
@@ -109,9 +105,7 @@ function AdminAgents() {
     return agents.filter((agent) => {
       const matchesSearch =
         !search ||
-        agent.full_name
-          ?.toLowerCase()
-          .includes(search) ||
+        agent.full_name?.toLowerCase().includes(search) ||
         agent.id?.toLowerCase().includes(search);
 
       let matchesFilter = true;
@@ -139,15 +133,9 @@ function AdminAgents() {
   const stats = useMemo(
     () => ({
       total: agents.length,
-      active: agents.filter(
-        (agent) => agent.activeCount > 0
-      ).length,
-      verified: agents.filter(
-        (agent) => agent.verifiedCount > 0
-      ).length,
-      pending: agents.filter(
-        (agent) => agent.pendingCount > 0
-      ).length,
+      active: agents.filter((agent) => agent.activeCount > 0).length,
+      verified: agents.filter((agent) => agent.verifiedCount > 0).length,
+      pending: agents.filter((agent) => agent.pendingCount > 0).length,
     }),
     [agents]
   );
@@ -166,16 +154,13 @@ function AdminAgents() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756970]">
-            Monitor agent activity and the verification
-            state of their property listings.
+            Monitor agent activity and the verification state of their
+            property listings.
           </p>
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label="Total Agents"
-            value={stats.total}
-          />
+          <StatCard label="Total Agents" value={stats.total} />
 
           <StatCard
             label="With Active Listings"
@@ -226,24 +211,14 @@ function AdminAgents() {
               <div className="relative">
                 <select
                   value={filter}
-                  onChange={(event) =>
-                    setFilter(event.target.value)
-                  }
+                  onChange={(event) => setFilter(event.target.value)}
                   className="w-full appearance-none rounded-lg border border-[#E8DDE1] bg-white px-4 py-3 pr-10 text-sm outline-none focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF]"
                 >
                   <option value="all">All Agents</option>
-                  <option value="active">
-                    Active Listings
-                  </option>
-                  <option value="verified">
-                    Verified Listings
-                  </option>
-                  <option value="pending">
-                    Pending Reviews
-                  </option>
-                  <option value="rejected">
-                    Rejected Listings
-                  </option>
+                  <option value="active">Active Listings</option>
+                  <option value="verified">Verified Listings</option>
+                  <option value="pending">Pending Reviews</option>
+                  <option value="rejected">Rejected Listings</option>
                 </select>
 
                 <ChevronDown
@@ -292,8 +267,7 @@ function AdminAgents() {
 
                     <div className="min-w-0 flex-1">
                       <h2 className="font-bold text-[#24171C]">
-                        {agent.full_name ||
-                          "Unnamed Agent"}
+                        {agent.full_name || "Unnamed Agent"}
                       </h2>
 
                       <p className="mt-1 break-all text-xs text-[#756970]">
@@ -357,9 +331,7 @@ function AdminAgents() {
 function StatCard({ label, value }) {
   return (
     <div className="rounded-2xl border border-[#E8DDE1] bg-white p-5 shadow-sm">
-      <p className="text-sm text-[#756970]">
-        {label}
-      </p>
+      <p className="text-sm text-[#756970]">{label}</p>
 
       <p className="mt-2 text-2xl font-bold text-[#24171C]">
         {value}
@@ -371,9 +343,7 @@ function StatCard({ label, value }) {
 function MiniStat({ label, value }) {
   return (
     <div className="rounded-xl bg-[#FAF8F9] p-3">
-      <p className="text-xs text-[#756970]">
-        {label}
-      </p>
+      <p className="text-xs text-[#756970]">{label}</p>
 
       <p className="mt-1 text-lg font-bold text-[#24171C]">
         {value}

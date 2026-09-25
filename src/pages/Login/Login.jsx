@@ -1,279 +1,196 @@
 
-import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  ShieldCheck,
+  ArrowLeft,
+  Eye,
+  EyeOff,
+  LockKeyhole,
   Mail,
-  Lock,
-  ArrowRight,
-  AlertCircle,
-  CheckCircle2,
+  ShieldCheck,
 } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
-import { supabase } from "../../services/supabase/client";
+import { useAuth } from "../../context/useAuth";
 
 function Login() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
   const { signIn } = useAuth();
 
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
-
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
 
-  const resetMessage = location.state?.message ?? "";
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (location.state?.message) {
-      const timer = setTimeout(() => {
-        navigate(location.pathname, {
-          replace: true,
-          state: {},
-        });
-      }, 5000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [location, navigate]);
-
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-
-    setFormData((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
-
-    setErrorMessage("");
-  };
+  const [isSubmitting, setIsSubmitting] =
+    useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    setErrorMessage("");
+    setError("");
 
-    if (!formData.email.trim()) {
-      setErrorMessage("Please enter your email address.");
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setError("Please enter your email address.");
       return;
     }
 
-    if (!formData.password) {
-      setErrorMessage("Please enter your password.");
+    if (!password) {
+      setError("Please enter your password.");
       return;
     }
 
-    setLoading(true);
+    setIsSubmitting(true);
 
     try {
-      const { data, error } = await signIn({
-        email: formData.email.trim(),
-        password: formData.password,
+      const { error: signInError } = await signIn({
+        email: trimmedEmail,
+        password,
       });
 
-      if (error) {
-        setLoading(false);
-        setErrorMessage(error.message);
-        return;
-      }
-
-      const user = data?.user;
-
-      if (!user) {
-        setLoading(false);
-        setErrorMessage(
-          "Unable to retrieve your account information."
-        );
-        return;
-      }
-
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      setLoading(false);
-
-      if (profileError) {
-        console.error(
-          "Error loading user profile:",
-          profileError
-        );
-
-        setErrorMessage(
-          "Your account was authenticated, but your profile could not be loaded."
-        );
+      if (signInError) {
+        if (
+          signInError.message
+            ?.toLowerCase()
+            .includes("email not confirmed")
+        ) {
+          setError(
+            "Please confirm your email address before logging in."
+          );
+        } else {
+          setError(
+            signInError.message ||
+              "Unable to log in. Please check your credentials."
+          );
+        }
 
         return;
       }
 
-      if (profile?.role === "admin") {
-        navigate("/admin/dashboard");
-      } else if (profile?.role === "agent") {
-        navigate("/agent/dashboard");
-      } else {
-        navigate("/renter/dashboard");
-      }
+      /*
+       * Do not navigate here.
+       *
+       * AuthContext receives the Supabase authentication
+       * event, loads the user's profile/role, and then
+       * GuestRoute redirects the user to the appropriate
+       * destination.
+       *
+       * This also preserves protected-route redirects:
+       *
+       * /protected-page
+       *       ↓
+       *     /login
+       *       ↓
+       * successful login
+       *       ↓
+       * /protected-page
+       */
     } catch (error) {
-      console.error("Unexpected login error:", error);
+      console.error("Login error:", error);
 
-      setLoading(false);
-      setErrorMessage(
-        "Something went wrong while signing you in. Please try again."
+      setError(
+        "Something went wrong while logging in. Please try again."
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-[#FAF8F9] px-5 py-12 sm:px-8 sm:py-16 lg:px-10 lg:py-20">
-      <div className="mx-auto grid w-full max-w-6xl items-center gap-12 lg:grid-cols-2 lg:gap-20">
+    <main className="min-h-[calc(100vh-80px)] bg-[#FAF8F9] px-5 py-12 sm:px-8 sm:py-16 lg:px-10">
+      <div className="mx-auto grid w-full max-w-6xl overflow-hidden rounded-2xl border border-[#E8DDE1] bg-white shadow-sm lg:grid-cols-2">
 
-        {/* LEFT SIDE */}
-        <div className="hidden lg:block">
-          <div className="max-w-lg">
+        {/* Left Information Panel */}
+        <section className="hidden bg-[#2D0A17] px-10 py-12 text-white lg:flex lg:flex-col lg:justify-between">
+          <div>
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-white/80 transition hover:text-white"
+            >
+              <ArrowLeft size={17} />
+              Back to RentSure
+            </Link>
 
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#7A1F3D] text-white shadow-sm">
-              <ShieldCheck size={28} />
-            </div>
-
-            <h1 className="mt-7 text-4xl font-bold leading-tight text-[#2D0A17] xl:text-5xl">
-              Rent smarter.
-              <span className="block text-[#7A1F3D]">
-                Rent safer.
-              </span>
-            </h1>
-
-            <p className="mt-6 max-w-md text-base leading-7 text-[#756970]">
-              Sign in to your RentSure account to manage your rental
-              activities, save properties, request viewings, and stay
-              informed about property verification.
-            </p>
-
-            <div className="mt-10 space-y-5">
-
-              {/* STEP 1 */}
-              <div className="flex items-start gap-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8EDEF] text-sm font-bold text-[#7A1F3D]">
-                  1
-                </div>
-
-                <div>
-                  <h2 className="text-sm font-bold text-[#24171C]">
-                    Discover properties
-                  </h2>
-
-                  <p className="mt-1 text-sm leading-6 text-[#756970]">
-                    Explore rental listings that provide verification
-                    and risk information.
-                  </p>
-                </div>
+            <div className="mt-16 max-w-md">
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[#7A1F3D]">
+                <ShieldCheck size={29} />
               </div>
 
-              {/* STEP 2 */}
-              <div className="flex items-start gap-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8EDEF] text-sm font-bold text-[#7A1F3D]">
-                  2
-                </div>
-
-                <div>
-                  <h2 className="text-sm font-bold text-[#24171C]">
-                    Review verification
-                  </h2>
-
-                  <p className="mt-1 text-sm leading-6 text-[#756970]">
-                    Check available verification information before
-                    making rental decisions.
-                  </p>
-                </div>
-              </div>
-
-              {/* STEP 3 */}
-              <div className="flex items-start gap-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8EDEF] text-sm font-bold text-[#7A1F3D]">
-                  3
-                </div>
-
-                <div>
-                  <h2 className="text-sm font-bold text-[#24171C]">
-                    Rent with awareness
-                  </h2>
-
-                  <p className="mt-1 text-sm leading-6 text-[#756970]">
-                    Use RentSure's tools to make more informed rental
-                    decisions.
-                  </p>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </div>
-
-        {/* LOGIN CARD */}
-        <div className="mx-auto w-full max-w-md">
-
-          {/* MOBILE HEADER */}
-          <div className="mb-8 text-center lg:hidden">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#7A1F3D] text-white shadow-sm">
-              <ShieldCheck size={28} />
-            </div>
-
-            <h1 className="mt-5 text-3xl font-bold text-[#2D0A17]">
-              Welcome back
-            </h1>
-
-            <p className="mt-2 text-sm text-[#756970]">
-              Sign in to continue to RentSure.
-            </p>
-          </div>
-
-          {/* CARD */}
-          <div className="rounded-2xl border border-[#E8DDE1] bg-white p-6 shadow-sm sm:p-8">
-
-            {/* DESKTOP HEADER */}
-            <div className="hidden lg:block">
-              <h2 className="text-2xl font-bold text-[#24171C]">
+              <p className="mt-8 text-sm font-semibold uppercase tracking-[0.18em] text-[#C9A227]">
                 Welcome back
-              </h2>
+              </p>
 
-              <p className="mt-2 text-sm leading-6 text-[#756970]">
-                Sign in to your RentSure account.
+              <h1 className="mt-3 text-4xl font-bold leading-tight">
+                Rent smarter.
+                <br />
+                Rent safer.
+              </h1>
+
+              <p className="mt-6 text-sm leading-7 text-white/70">
+                Sign in to manage your saved properties,
+                viewing requests, reports, and other
+                RentSure activities.
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t border-white/10 pt-6">
+            <p className="text-xs leading-5 text-white/55">
+              RentSure provides property verification and
+              fraud-awareness information to help renters
+              make more informed decisions.
+            </p>
+          </div>
+        </section>
+
+        {/* Login Form */}
+        <section className="px-6 py-10 sm:px-10 sm:py-12 lg:px-12 lg:py-14">
+          <div className="mx-auto w-full max-w-md">
+
+            {/* Mobile Back Link */}
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-[#7A1F3D] transition hover:text-[#4A1025] lg:hidden"
+            >
+              <ArrowLeft size={17} />
+              Back to RentSure
+            </Link>
+
+            <div className="mt-8 lg:mt-0">
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#C9A227]">
+                Account Login
+              </p>
+
+              <h1 className="mt-3 text-3xl font-bold tracking-tight text-[#24171C]">
+                Welcome back
+              </h1>
+
+              <p className="mt-3 text-sm leading-6 text-[#756970]">
+                Enter your details to access your RentSure
+                account.
               </p>
             </div>
 
-            {/* PASSWORD RESET SUCCESS MESSAGE */}
-            {resetMessage && (
+            {/* Error Message */}
+            {error && (
               <div
-                role="status"
-                className="mt-6 flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4"
+                role="alert"
+                className="mt-7 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"
               >
-                <CheckCircle2
-                  size={19}
-                  className="mt-0.5 shrink-0 text-[#15803D]"
-                />
-
-                <p className="text-sm leading-5 text-[#15803D]">
-                  {resetMessage}
-                </p>
+                {error}
               </div>
             )}
 
             <form
               onSubmit={handleSubmit}
-              className={`${resetMessage ? "mt-5" : "mt-7"} space-y-5`}
+              className="mt-8 space-y-6"
             >
-
-              {/* EMAIL */}
+              {/* Email */}
               <div>
                 <label
                   htmlFor="login-email"
-                  className="mb-2.5 block text-sm font-semibold text-[#24171C]"
+                  className="mb-2 block text-sm font-semibold text-[#24171C]"
                 >
                   Email address
                 </label>
@@ -281,26 +198,27 @@ function Login() {
                 <div className="relative">
                   <Mail
                     size={18}
-                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#7A1F3D]"
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#756970]"
                   />
 
                   <input
                     id="login-email"
-                    name="email"
                     type="email"
-                    value={formData.email}
-                    onChange={handleChange}
+                    value={email}
+                    onChange={(event) =>
+                      setEmail(event.target.value)
+                    }
                     placeholder="you@example.com"
                     autoComplete="email"
-                    disabled={loading}
-                    className="h-12 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 pl-11 text-sm text-[#24171C] outline-none transition placeholder:text-[#A39A9F] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF] disabled:cursor-not-allowed disabled:bg-[#FAF8F9]"
+                    disabled={isSubmitting}
+                    className="w-full rounded-lg border border-[#E8DDE1] bg-white py-3 pl-10 pr-4 text-sm text-[#24171C] outline-none transition placeholder:text-[#A69CA0] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF] disabled:bg-[#FAF8F9]"
                   />
                 </div>
               </div>
 
-              {/* PASSWORD */}
+              {/* Password */}
               <div>
-                <div className="mb-2.5 flex items-center justify-between gap-4">
+                <div className="mb-2 flex items-center justify-between gap-4">
                   <label
                     htmlFor="login-password"
                     className="text-sm font-semibold text-[#24171C]"
@@ -310,111 +228,114 @@ function Login() {
 
                   <Link
                     to="/forgot-password"
-                    className="text-sm font-semibold text-[#7A1F3D] transition hover:text-[#4A1025]"
+                    className="text-xs font-semibold text-[#7A1F3D] transition hover:text-[#4A1025]"
                   >
                     Forgot password?
                   </Link>
                 </div>
 
                 <div className="relative">
-                  <Lock
+                  <LockKeyhole
                     size={18}
-                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#7A1F3D]"
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#756970]"
                   />
 
                   <input
                     id="login-password"
-                    name="password"
-                    type="password"
-                    value={formData.password}
-                    onChange={handleChange}
+                    type={
+                      showPassword
+                        ? "text"
+                        : "password"
+                    }
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
                     placeholder="Enter your password"
                     autoComplete="current-password"
-                    disabled={loading}
-                    className="h-12 w-full rounded-lg border border-[#E8DDE1] bg-white px-4 pl-11 text-sm text-[#24171C] outline-none transition placeholder:text-[#A39A9F] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF] disabled:cursor-not-allowed disabled:bg-[#FAF8F9]"
+                    disabled={isSubmitting}
+                    className="w-full rounded-lg border border-[#E8DDE1] bg-white py-3 pl-10 pr-12 text-sm text-[#24171C] outline-none transition placeholder:text-[#A69CA0] focus:border-[#7A1F3D] focus:ring-2 focus:ring-[#F8EDEF] disabled:bg-[#FAF8F9]"
                   />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPassword(
+                        (previous) => !previous
+                      )
+                    }
+                    disabled={isSubmitting}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-[#756970] transition hover:bg-[#F8EDEF] hover:text-[#7A1F3D]"
+                    aria-label={
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
+                    }
+                  >
+                    {showPassword ? (
+                      <EyeOff size={18} />
+                    ) : (
+                      <Eye size={18} />
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {/* REMEMBER ME */}
-              <div className="flex items-center gap-3">
+              {/* Remember Me */}
+              <label className="flex cursor-pointer items-center gap-3">
                 <input
-                  id="remember"
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(event) =>
                     setRememberMe(event.target.checked)
                   }
-                  disabled={loading}
+                  disabled={isSubmitting}
                   className="h-4 w-4 rounded border-[#E8DDE1] accent-[#7A1F3D]"
                 />
 
-                <label
-                  htmlFor="remember"
-                  className="text-sm text-[#756970]"
-                >
+                <span className="text-sm text-[#756970]">
                   Remember me
-                </label>
-              </div>
+                </span>
+              </label>
 
-              {/* ERROR */}
-              {errorMessage && (
-                <div
-                  role="alert"
-                  className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4"
-                >
-                  <AlertCircle
-                    size={18}
-                    className="mt-0.5 shrink-0 text-[#B91C1C]"
-                  />
-
-                  <p className="text-sm leading-5 text-[#B91C1C]">
-                    {errorMessage}
-                  </p>
-                </div>
-              )}
-
-              {/* LOGIN BUTTON */}
+              {/* Submit */}
               <button
                 type="submit"
-                disabled={loading}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#4A1025] focus:outline-none focus:ring-2 focus:ring-[#7A1F3D] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSubmitting}
+                className="flex min-h-12 w-full items-center justify-center rounded-lg bg-[#7A1F3D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#4A1025] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? (
-                  "Signing In..."
-                ) : (
-                  <>
-                    Sign In
-                    <ArrowRight size={17} />
-                  </>
-                )}
+                {isSubmitting
+                  ? "Signing in..."
+                  : "Sign In"}
               </button>
-
             </form>
 
-            {/* REGISTER */}
-            <div className="mt-7 border-t border-[#E8DDE1] pt-6 text-center">
-              <p className="text-sm text-[#756970]">
-                Don't have an account?{" "}
-                <Link
-                  to="/register"
-                  className="font-semibold text-[#7A1F3D] hover:text-[#4A1025]"
-                >
-                  Create one
-                </Link>
+            {/* Register */}
+            <p className="mt-8 text-center text-sm text-[#756970]">
+              Don't have an account?{" "}
+              <Link
+                to="/register"
+                className="font-semibold text-[#7A1F3D] hover:text-[#4A1025]"
+              >
+                Create an account
+              </Link>
+            </p>
+
+            {/* Security Notice */}
+            <div className="mt-8 flex gap-3 rounded-xl border border-[#E8DDE1] bg-[#FAF8F9] p-4">
+              <ShieldCheck
+                size={18}
+                className="mt-0.5 shrink-0 text-[#7A1F3D]"
+              />
+
+              <p className="text-xs leading-5 text-[#756970]">
+                Keep your RentSure password private. RentSure
+                will never ask you to share your password or
+                authentication code with another person.
               </p>
             </div>
-
           </div>
-
-          {/* FOOTER NOTICE */}
-          <p className="mt-6 text-center text-xs leading-5 text-[#756970]">
-            By signing in, you agree to use RentSure responsibly.
-            Verification information is provided for rental decision
-            support and is not a legal guarantee.
-          </p>
-
-        </div>
+        </section>
       </div>
     </main>
   );

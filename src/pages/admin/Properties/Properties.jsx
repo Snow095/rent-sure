@@ -10,7 +10,6 @@ import {
   Loader2,
   Search,
   ShieldCheck,
-  X,
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "../../../services/supabase/client";
@@ -51,54 +50,63 @@ function AdminProperties() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const loadProperties = async () => {
-    setLoading(true);
-    setErrorMessage("");
-
-    try {
-      const { data, error } = await supabase
-        .from("properties")
-        .select(`
-          id,
-          agent_id,
-          title,
-          location,
-          property_type,
-          annual_rent,
-          bedrooms,
-          bathrooms,
-          verification_status,
-          property_status,
-          risk_score,
-          created_at,
-          updated_at
-        `)
-        .order("created_at", {
-          ascending: false,
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      setProperties(data ?? []);
-    } catch (error) {
-      console.error(
-        "Error loading admin properties:",
-        error
-      );
-
-      setErrorMessage(
-        error.message ||
-          "Unable to load properties."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    let cancelled = false;
+
+    const loadProperties = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("properties")
+          .select(`
+            id,
+            agent_id,
+            title,
+            location,
+            property_type,
+            annual_rent,
+            bedrooms,
+            bathrooms,
+            verification_status,
+            property_status,
+            risk_score,
+            created_at,
+            updated_at
+          `)
+          .order("created_at", {
+            ascending: false,
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!cancelled) {
+          setProperties(data ?? []);
+        }
+      } catch (error) {
+        console.error(
+          "Error loading admin properties:",
+          error
+        );
+
+        if (!cancelled) {
+          setErrorMessage(
+            error.message ||
+              "Unable to load properties."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
     loadProperties();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredProperties = useMemo(() => {

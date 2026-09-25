@@ -2,7 +2,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/useAuth";
 
-function AdminRoute() {
+function RoleRoute({ allowedRoles }) {
   const {
     user,
     role,
@@ -20,7 +20,7 @@ function AdminRoute() {
           </div>
 
           <h2 className="mt-5 text-lg font-bold text-[#24171C]">
-            Checking administrator access...
+            Checking your account...
           </h2>
 
           <p className="mt-2 text-sm leading-6 text-[#756970]">
@@ -31,12 +31,6 @@ function AdminRoute() {
     );
   }
 
-  /*
-   * User is not authenticated.
-   *
-   * Send them to Login and preserve the page they originally
-   * attempted to access.
-   */
   if (!user) {
     return (
       <Navigate
@@ -47,28 +41,35 @@ function AdminRoute() {
     );
   }
 
-  /*
-   * User is authenticated but does not have the admin role.
-   *
-   * They are redirected to the public home page instead of
-   * allowing access to admin pages.
-   */
-  if (role !== "admin") {
+  if (!allowedRoles.includes(role)) {
+    if (role === "admin") {
+      return (
+        <Navigate
+          to="/admin/dashboard"
+          replace
+        />
+      );
+    }
+
+    if (role === "agent") {
+      return (
+        <Navigate
+          to="/agent/dashboard"
+          replace
+        />
+      );
+    }
+
     return (
       <Navigate
-        to="/"
+        to="/renter/dashboard"
         replace
       />
     );
   }
 
-  /*
-   * Authenticated administrator.
-   *
-   * Render the nested admin route.
-   */
   return <Outlet />;
 }
 
-export default AdminRoute;
+export default RoleRoute;
 
