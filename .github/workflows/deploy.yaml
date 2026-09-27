@@ -54,7 +54,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -67,3 +67,6 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/rentsure:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/rentsure:${{ github.sha }}
+
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
