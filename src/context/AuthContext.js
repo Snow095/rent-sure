@@ -246,21 +246,35 @@ export function AuthProvider({ children }) {
     };
   };
 
-  const signIn = async ({
-    email,
-    password,
-  }) => {
-    const {
-      data,
-      error,
-    } = await supabase.auth.signInWithPassword({
+  const signIn = async ({ email, password }) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
+    if (error) {
+      if (
+        error.message?.toLowerCase().includes("email not confirmed")
+      ) {
+        return {
+          data: null,
+          error,
+        };
+      }
+
+      return {
+        data: null,
+        error: {
+          ...error,
+          message:
+            "Invalid email or password. If you don't have an account, please sign up.",
+        },
+      };
+    }
+
     return {
       data,
-      error,
+      error: null,
     };
   };
 
